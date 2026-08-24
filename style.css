@@ -65,6 +65,11 @@ html, body {
   border-color: rgba(255, 255, 255, 0.22);
 }
 #itemSlot canvas { width: 76px; height: 76px; }
+#itemSlot.ready {
+  border-color: rgba(255, 232, 150, 0.85);
+  background: rgba(38, 30, 10, 0.42);
+  box-shadow: 0 0 16px rgba(255, 214, 110, 0.45), inset 0 0 14px rgba(255, 214, 110, 0.2);
+}
 
 #minimap {
   position: absolute; left: 18px; bottom: 18px;

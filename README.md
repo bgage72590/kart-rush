@@ -136,6 +136,12 @@ The extra texture taps sit behind `if (uniform > 0.0)`. A branch on a uniform is
 coherent across the whole draw, so that cost is only paid while the effect is on
 screen.
 
+The ten item icons are drawn into offscreen bitmaps at boot and blitted from
+then on, so detail there is free at runtime. They rasterise at device
+resolution — at 76px on a 3x phone the old bitmaps were being upscaled into
+mush — and the slot lights up while something is actually loaded, so a glance
+at the edge of the screen tells you whether you have a weapon.
+
 And in motion: karts lean harder as the mini-turbo charges, dip their nose under
 braking, and squash on landing. Wheel spin is capped below the rate that aliases
 into a backwards-strobe at 60Hz, with a blurred tyre above it.
