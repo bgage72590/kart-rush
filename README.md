@@ -1,5 +1,7 @@
 # Kart Rush
 
+**Play it: <https://bgage72590.github.io/kart-rush/>**
+
 A Mario Kart–style 3D racing game that runs entirely in the browser. No build
 step, no assets — every model, texture, track, and sound is generated in code
 (three.js r170, vendored locally).
