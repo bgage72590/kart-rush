@@ -295,8 +295,10 @@ export class KartVisual {
     // you how close the boost is without looking at the bar.
     const targetLean = (r.drift || 0) * (0.15 + Math.min(0.11, (r.driftCharge || 0) * 0.07));
     this._lean += (targetLean - this._lean) * Math.min(1, dt * 8);
+    // Duration comes from the racer, not a constant: hang time shrinks with
+    // engine class, and a roll that outlasts the jump lands mid-rotation.
     const trickRoll = (r.trickT != null && r.trickT >= 0)
-      ? Math.min(1, r.trickT / 0.55) * Math.PI * 2 : 0;
+      ? Math.min(1, r.trickT / (r.trickDur || 0.55)) * Math.PI * 2 : 0;
 
     // weight transfer: the nose dives under braking and lifts under power
     const accel = dt > 0 ? (r.speed - this._prevSpeed) / dt : 0;

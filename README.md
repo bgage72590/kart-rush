@@ -67,6 +67,11 @@ top speed — steering authority, drift entry and exit, slipstream range — so
 scaling it preserves the character of the driving and changes only how much
 time you get to use it.
 
+Jumps are the exception that proves it: gravity scales with the *square* of
+class speed, because hang time then falls as 1/k while ground speed rises as k,
+so every class clears a ramp at the same distance and the same height. Track
+geometry does not scale, so the jump must not either.
+
 ## Controls
 
 | Key | Action |

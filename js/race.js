@@ -12,10 +12,13 @@ import { ParticlePool, SkidMarks, softDotTexture } from './fx.js';
 import { Garage } from './garage.js';
 import * as Store from './store.js';
 
-// Which CFG values are absolute speeds, and so scale with the engine class.
-// Declared once: adding a scaled constant is a CFG entry plus a name here,
-// rather than a line that is easy to forget to write.
-const SCALED = ['topSpeed', 'accel', 'brake', 'revSpeed', 'shellSpeed', 'rampMin'];
+// CFG values that scale with the engine class: speeds, and distances that
+// should preserve the same time window at any speed. Declared once, so adding
+// a scaled constant is a CFG entry plus a name here.
+const SCALED = [
+  'topSpeed', 'accel', 'brake', 'revSpeed', 'shellSpeed', 'rampMin',
+  'rescueSpeed', 'wrongWayMin', 'grappleRange', 'airLaunch', 'geyserLaunch',
+];
 
 // Everything the handling model measures against top speed is already written
 // as a ratio — steering authority, drift entry and exit, slipstream range — so
@@ -27,35 +30,55 @@ const SCALED = ['topSpeed', 'accel', 'brake', 'revSpeed', 'shellSpeed', 'rampMin
 // is reassigned every race and cannot be, so leaving `top * 0.4` inline would
 // mean thousands of loads and multiplies a second for six fixed numbers.
 function makeTune(cls) {
+  const k = cls.speed;
   const t = { skill: cls.skill, band: cls.band };
-  for (const key of SCALED) t[key] = CFG[key] * cls.speed;
+  for (const key of SCALED) {
+    const base = CFG[key];
+    // A renamed or misspelled key would otherwise yield NaN and poison every
+    // threshold derived below it, with nothing thrown and nothing logged.
+    if (!isFinite(base)) throw new Error('CFG.' + key + ' is missing or not a number');
+    t[key] = base * k;
+  }
+
+  // Gravity scales with the *square* of class speed so a jump keeps its shape.
+  // Hang time then falls as 1/k while ground speed rises as k, which lands
+  // every class at the same distance and the same height — track geometry does
+  // not scale, so the jump must not either. Left linear, a 52% speed increase
+  // stretched jumps 97% and threw 150cc karts clean past the corner.
+  t.gravity = CFG.gravity * k * k;
+  // ...and the barrel roll has to finish inside that shorter hang time.
+  t.trickSpin = CFG.trickSpin / k;
+
   const top = t.topSpeed;
   t.driftEntry = top * 0.4;     // fast enough to break into a drift
   t.driftDrop = top * 0.25;     // too slow to hold one
   t.steerRef = top * 0.32;      // speed at which steering reaches full authority
-  t.fastGate = top * 0.55;      // "moving properly": slipstream and AI drift entry
+  t.draftGate = top * 0.55;     // fast enough to be slipstreaming
   t.draftMin = top * 0.5;       // the kart ahead must be going at least this fast
+  t.aiDriftGate = top * 0.55;   // AI will not attempt a drift below this
   t.grapplePull = top * 1.45;
   return t;
 }
 
-// G.tune is a pure function of the class, so the two move together. The menu
-// changes class outside a race, and anything reading the tune before the next
-// startRace would otherwise see the previous one.
-export function setClass(i) {
-  G.cls = clamp(i | 0, 0, CLASSES.length - 1);
-  G.tune = makeTune(CLASSES[G.cls]);
-}
+// The class and the tuning derived from it must never disagree, so the class is
+// a property with a setter rather than a field anyone can write past. Assigning
+// G.cls rebuilds G.tune; there is no other way to change either, which is what
+// a plain field plus a setClass() helper could never actually guarantee.
+let clsIndex = 1;
 
 // The selected class, for callers that want its name or id rather than its
-// physics. Live, so the menu shows what is selected right now.
-export const curClass = () => CLASSES[G.cls];
+// physics.
+export const curClass = () => CLASSES[clsIndex];
 
 export const G = {
   state: 'MENU',            // MENU | CHARSEL | COUNTDOWN | RACE | PAUSE | RESULTS
   trackIndex: 0,
-  cls: 1,                   // engine class index into CLASSES
-  tune: makeTune(CLASSES[1]),
+  get cls() { return clsIndex; },
+  set cls(v) {
+    clsIndex = clamp(v | 0, 0, CLASSES.length - 1);
+    this.tune = makeTune(CLASSES[clsIndex]);
+  },
+  tune: null,               // built through the setter immediately below
   playerChar: 0,
   rivalId: -1,
   prevPlayerPlace: 6,
@@ -81,6 +104,8 @@ export const G = {
   results: null,
   auto: false,              // autopilot for the player (used by tests/attract)
 };
+
+G.cls = clsIndex;           // derive the initial tune through the setter
 
 let scene = null;
 let visuals = [];
@@ -278,7 +303,7 @@ function makeRacer(id, charIdx, isPlayer, track, gridSlot) {
     drift: 0, driftCharge: 0, hop: 0, driftReady: false, hopZ: 0,
     spin: 0, boost: 0, star: 0, respawn: 0, boostPadCd: 0, forceRescue: 0,
     shield: false, slip: 0, stall: 0, onIce: false,
-    airY: 0, airV: 0, tricked: false, trickT: -1, prevAirDrift: false,
+    airY: 0, airV: 0, tricked: false, trickT: -1, trickDur: CFG.trickSpin, prevAirDrift: false,
     grapple: null,
     item: null, itemRoll: 0, rollIcon: 0, pendingItem: null,
     lap: 1, wpIdx: 0, progress: 0, place: gridSlot + 1, rank: 0,
@@ -317,6 +342,7 @@ function killGrapple(gp) {
 }
 
 export function clearProjectiles() {
+  if (!scene) return;                // nothing has been added to a scene yet
   for (const s of G.shells) if (s.mesh) scene.remove(s.mesh);
   for (const b of G.bananas) if (b.mesh) scene.remove(b.mesh);
   for (const o of G.oils) if (o.mesh) scene.remove(o.mesh);
@@ -332,8 +358,6 @@ export function startRace(sceneRef, track, trackIndex) {
   if (!G.track || G.track !== track) scene.add(track.group);
   G.track = track;
   G.trackIndex = trackIndex;
-  setClass(G.cls);          // re-derive, in case the class moved since last race
-
   clearProjectiles();
   for (const sm of track.snowmen) { sm.alive = true; sm.group.visible = true; }
   for (const box of track.itemBoxes) {
@@ -471,7 +495,7 @@ function updateProgress(r) {
 
   const w = wps[near];
   r.wrongWay = r.isPlayer &&
-    (Math.cos(r.angle) * w.tx + Math.sin(r.angle) * w.tz) < -0.35 && r.speed > 8;
+    (Math.cos(r.angle) * w.tx + Math.sin(r.angle) * w.tz) < -0.35 && r.speed > G.tune.wrongWayMin;
   r.rank = r.lap * n + r.progress;
 }
 
@@ -538,11 +562,12 @@ function finishRace() {
 // the name "My Track" through every edit, so its rev has to be part of the key
 // or an old ghost replays through new terrain.
 export function recordKey(def, cls = G.cls) {
+  const i = clamp(cls | 0, 0, CLASSES.length - 1);
   const base = def.custom ? 'My Track#' + (def.rev || 0) : def.name;
   // A 150cc lap would beat every 50cc lap forever, so a record only means
   // something within its own class. Stamped with the stable id rather than the
   // display name, so renaming a class cannot orphan every saved best and ghost.
-  return base + '@' + CLASSES[cls].id;
+  return base + '@' + CLASSES[i].id;
 }
 
 export function getBestByName(name) {
@@ -689,7 +714,7 @@ function useItem(r) {
     }
   } else if (kind === 'grapple') {
     // latch onto a kart ahead and slingshot past it
-    let best = null, bestD = 46;
+    let best = null, bestD = G.tune.grappleRange;
     for (const o of G.racers) {
       if (o === r || o.finished) continue;
       const dx = o.x - r.x, dz = o.z - r.z;
@@ -815,11 +840,12 @@ function driveRacer(r, c, dt) {
 
   // airborne: ballistic arc, no steering
   if (r.airY > 0 || r.airV > 0) {
-    r.airV -= 40 * dt;
+    r.airV -= T.gravity * dt;
     r.airY += r.airV * dt;
     if (c.drift && !r.prevAirDrift && !r.tricked && r.airY > 0.4) {
       r.tricked = true;
       r.trickT = 0;
+      r.trickDur = T.trickSpin;      // the visual reads this, so it scales too
       if (r.isPlayer) Sound.trick();
     }
     r.prevAirDrift = c.drift;
@@ -909,7 +935,7 @@ function driveRacer(r, c, dt) {
   r.hopZ = r.hop > 0 ? Math.sin((0.18 - r.hop) / 0.18 * Math.PI) * 1.1 : 0;
 
   // slipstream: tuck in behind someone at speed for a second, get a surge
-  if (r.spin <= 0 && r.stall <= 0 && r.speed > T.fastGate) {
+  if (r.spin <= 0 && r.stall <= 0 && r.speed > T.draftGate) {
     let drafting = false;
     const fx2 = Math.cos(r.angle), fz2 = Math.sin(r.angle);
     for (const o of G.racers) {
@@ -965,7 +991,7 @@ function driveRacer(r, c, dt) {
     for (const ramp of track.ramps) {
       const rel = ((r.q.sIdx - ramp.s0) % track.N + track.N) % track.N;
       if (rel <= 2 && Math.abs(r.q.lat) <= ramp.latMax) {
-        r.airV = 5 + r.speed * 0.13;
+        r.airV = T.airLaunch + r.speed * 0.13;
         r.airY = 0.01;
         r.prevAirDrift = true;          // require a fresh drift press for the trick
         if (r.isPlayer) Sound.sweep(300, 700, 0.25, 0.1);
@@ -1042,7 +1068,7 @@ function aiControls(r, dt) {
     steer,
     gas: !coast,
     brake,
-    drift: Math.abs(steer) > 0.72 && r.speed > T.fastGate && T.skill > 0.9,
+    drift: Math.abs(steer) > 0.72 && r.speed > T.aiDriftGate && T.skill > 0.9,
     item: useIt,
   };
 }
@@ -1197,7 +1223,7 @@ function updateHazards(dt) {
     for (const r of G.racers) {
       if (r.finished || r.airY > 0) continue;
       if (Math.hypot(r.x - gy.x, r.z - gy.z) < gy.r) {
-        r.airV = 15;
+        r.airV = G.tune.geyserLaunch;
         r.airY = 0.01;
         r.speed *= 0.7;
         if (r.isPlayer) { Sound.noiseBurst(0.4, 300, 0.25); G.cam.shake = 0.8; }
@@ -1335,7 +1361,7 @@ export function stepRace(dt) {
         r.x = w.x; r.z = w.z;
         r.angle = Math.atan2(w.tz, w.tx);
         r.visYaw = r.angle;
-        r.speed = 8;
+        r.speed = G.tune.rescueSpeed;
         r.respawn = 0;
         r.airY = 0; r.airV = 0; r.slip = 0; r.stall = 0; r.spin = 0;
         r.forceRescue = 0; r.grapple = null;

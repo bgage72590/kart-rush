@@ -17,6 +17,13 @@ export const CFG = {
   revSpeed: 20,
   shellSpeed: 88,           // thrown shells, so they keep pace with the field
   rampMin: 24,              // minimum speed to launch off a jump
+  rescueSpeed: 8,           // speed a rescued kart is set back down at
+  wrongWayMin: 8,           // moving fast enough to deserve the wrong-way warning
+  grappleRange: 46,         // how far ahead the hook can latch
+  airLaunch: 5,             // ramp impulse, before the speed-proportional term
+  geyserLaunch: 15,
+  gravity: 40,              // scaled by the square of class speed, see makeTune
+  trickSpin: 0.55,          // seconds for the airborne barrel roll
   steerPower: 3.3,
   grassFactor: 0.55,
   driftT1: 0.85,            // seconds of drift for the blue mini-turbo

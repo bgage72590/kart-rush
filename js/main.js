@@ -18,7 +18,7 @@ import { TrackEditor } from './editor.js';
 import { Renderer, SunShadow } from './render.js';
 import {
   G, initRace, startRace, stepRace, syncVisuals, hideRacers, getVisuals, clearFx,
-  clearProjectiles, setClass,
+  clearProjectiles,
   awardGpPoints, confettiBurst, cleanupGhost, resolveRocketStart,
 } from './race.js';
 import {
@@ -668,8 +668,9 @@ function menuArrow(row, dir) {
     attachTrack(G.trackIndex);
   } else if (row === 2) {
     // The engine class scales your own kart too, so it matters in a time trial
-    // just as much as it does with a field to race.
-    setClass(G.cls + dir);
+    // just as much as it does with a field to race. The setter clamps and
+    // rebuilds the tuning, so there is nothing else to keep in step.
+    G.cls += dir;
   }
   savePrefs();
   updateMenu(menuSel);
@@ -816,8 +817,10 @@ try {
     G.mode = clamp(prefs.mode | 0, 0, MODES.length - 1);
     G.trackIndex = clamp(prefs.trackIndex | 0, 0, trackCount() - 1);
     // `difficulty` is the pre-class key; carry an old preference across rather
-    // than resetting someone to the middle class on their next visit.
-    setClass(prefs.cls != null ? prefs.cls : prefs.difficulty);
+    // than resetting someone on their next visit. Falling through to the
+    // current value keeps a prefs blob with neither key on the default class
+    // instead of silently dropping them to 50cc.
+    G.cls = prefs.cls ?? prefs.difficulty ?? G.cls;
     G.playerChar = clamp(prefs.playerChar | 0, 0, CHARACTERS.length - 1);
     if (prefs.muted) setFirstInputHook(() => { Sound.init(); Sound.resume(); Sound.toggleMute(); });
   }
