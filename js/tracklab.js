@@ -47,8 +47,7 @@ function hashString(s) {
 
 export function makeDailyDef() {
   const now = new Date();
-  const key = now.getFullYear() + '-' + (now.getMonth() + 1) + '-' + now.getDate();
-  const seed = hashString('kartrush-daily-' + key);
+  const seed = hashString('kartrush-daily-' + todayKey());
   const rng = mulberry32(seed ^ 0xbeef);
   const base = THEME_BASES[Math.floor(rng() * THEME_BASES.length)];
   const label = now.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
@@ -130,9 +129,21 @@ export function applyTheme(def, themeIndex) {
 
 // --- the selectable track list ---------------------------------------------------
 
+// Keyed by the date it was generated for, not just cached forever: a tab left
+// open across midnight would otherwise keep serving yesterday's challenge under
+// yesterday's label.
 let daily = null;
+let dailyFor = '';
+function todayKey() {
+  const n = new Date();
+  return n.getFullYear() + '-' + (n.getMonth() + 1) + '-' + n.getDate();
+}
+
 export function getTrackList() {
-  if (!daily) daily = makeDailyDef();
+  if (!daily || dailyFor !== todayKey()) {
+    dailyFor = todayKey();
+    daily = makeDailyDef();
+  }
   const list = TRACK_DEFS.slice();
   list.push(daily);
   const custom = loadCustomDef();

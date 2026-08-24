@@ -267,6 +267,7 @@ function enterPodium() {
 }
 
 function exitPodium() {
+  if (G.state !== 'PODIUM') return;      // guard, as its sibling screen exits do
   if (podiumSteps) {
     scene.remove(podiumSteps);
     podiumSteps = null;
