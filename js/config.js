@@ -15,6 +15,8 @@ export const CFG = {
   accel: 80,
   brake: 135,
   revSpeed: 20,
+  shellSpeed: 88,           // thrown shells, so they keep pace with the field
+  rampMin: 24,              // minimum speed to launch off a jump
   steerPower: 3.3,
   grassFactor: 0.55,
   driftT1: 0.85,            // seconds of drift for the blue mini-turbo
@@ -97,10 +99,12 @@ export const GP_POINTS = [10, 8, 6, 4, 2, 1];
 // Pure speed scaling alone leaves a perfectly precise but slow opponent, which
 // reads as robotic rather than easy. `band` is the rubber-band strength, eased
 // off at 150cc so the AI is not held back at the class meant to be hard.
+// `id` is what save keys are stamped with and must never change; `name` is
+// only ever shown to the player.
 export const CLASSES = [
-  { name: '50cc', speed: 0.80, skill: 0.86, band: 0.10 },
-  { name: '100cc', speed: 1.00, skill: 0.94, band: 0.09 },
-  { name: '150cc', speed: 1.22, skill: 1.00, band: 0.07 },
+  { id: '50', name: '50cc', speed: 0.80, skill: 0.86, band: 0.10 },
+  { id: '100', name: '100cc', speed: 1.00, skill: 0.94, band: 0.09 },
+  { id: '150', name: '150cc', speed: 1.22, skill: 1.00, band: 0.07 },
 ];
 
 export const TRACK_DEFS = [

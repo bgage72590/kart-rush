@@ -2,9 +2,9 @@
 // DOM HUD: lap/time/position panels, item slot, minimap, speedometer,
 // menus, pause and results screens.
 // ---------------------------------------------------------------------------
-import { CFG, TRACK_DEFS, CLASSES, CHARACTERS, charStats, MODES } from './config.js';
+import { CFG, TRACK_DEFS, CHARACTERS, charStats, MODES } from './config.js';
 import { clamp, fmtTime, ordinal, suffix, TAU, makeCanvas } from './util.js';
-import { G, getBestForDef } from './race.js';
+import { G, getBestForDef, curClass } from './race.js';
 import { Garage, PARTS, PAINTS } from './garage.js';
 import { getTrackDef } from './tracklab.js';
 import { showTouchControls } from './touch.js';
@@ -449,7 +449,7 @@ const ICON_ORDER = ['mushroom', 'green', 'red', 'banana', 'star', 'shield', 'oil
 export function initHUD() {
   ['hud', 'menu', 'pauseMenu', 'resultsScreen', 'loading', 'lapNum', 'raceTime',
     'posNum', 'posSuf', 'itemIcon', 'minimap', 'speedo', 'driftbar', 'driftfill',
-    'centerMsg', 'lapTimeMsg', 'wrongway', 'countdown', 'mTrack', 'mDiff', 'mBest',
+    'centerMsg', 'lapTimeMsg', 'wrongway', 'countdown', 'mTrack', 'mClass', 'mBest',
     'resultsTitle', 'resultsSub', 'resultsTable',
   ].forEach((id) => { el[id] = $(id); });
   // device-resolution backing stores; CSS keeps every one at its layout size
@@ -493,7 +493,7 @@ export function updateMenu(sel) {
   const tdef = getTrackDef(G.trackIndex);
   el.mTrack.textContent = G.mode === 1 ? 'Rush Cup — all 5 tracks' : tdef.name;
   document.querySelector('.menuRow[data-row="1"]').classList.toggle('dim', G.mode === 1);
-  el.mDiff.textContent = CLASSES[G.cls].name;
+  el.mClass.textContent = curClass().name;
   $('mGarage').textContent = '🪙 ' + Garage.coins + '  ·  customize kart';
   $('mStart').textContent = ['START RACE', 'START CUP', 'START TIME TRIAL'][G.mode];
   const best = getBestForDef(tdef);
@@ -804,7 +804,7 @@ export function showResults() {
     el.resultsTitle.textContent =
       me.place === 1 ? 'YOU WIN!' : (me.place <= 3 ? 'PODIUM!' : 'FINISHED');
     el.resultsSub.textContent =
-      G.track.def.name + '  ·  ' + CLASSES[G.cls].name +
+      G.track.def.name + '  ·  ' + curClass().name +
       '  ·  earned 🪙 ' + ((G.lastPayout || 0) + (G.coinsThisRace || 0)) +
       ' (wallet ' + Garage.coins + ')';
   }

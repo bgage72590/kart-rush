@@ -2,7 +2,7 @@
 // Boot, renderer, camera, state machine, main loop.
 // ---------------------------------------------------------------------------
 import * as THREE from 'three';
-import { CFG, TRACK_DEFS, CLASSES } from './config.js';
+import { CFG, TRACK_DEFS } from './config.js';
 import { clamp, lerp, angNorm } from './util.js';
 import {
   keys, wasPressed, clearPressed, setFirstInputHook, lookingBack, readControls,
@@ -18,7 +18,7 @@ import { TrackEditor } from './editor.js';
 import { Renderer, SunShadow } from './render.js';
 import {
   G, initRace, startRace, stepRace, syncVisuals, hideRacers, getVisuals, clearFx,
-  clearProjectiles,
+  clearProjectiles, setClass,
   awardGpPoints, confettiBurst, cleanupGhost, resolveRocketStart,
 } from './race.js';
 import {
@@ -141,7 +141,7 @@ function doStartRace() {
   hideCharPreview();
   rotateHintTimer = 5;
   const track = attachTrack(G.trackIndex);
-  startRace(scene, track, G.trackIndex, G.cls);
+  startRace(scene, track, G.trackIndex);
   resetCamera();
   showScreen('hud');
   setRevMode(true);          // countdown: the gas button doubles as REV
@@ -669,7 +669,7 @@ function menuArrow(row, dir) {
   } else if (row === 2) {
     // The engine class scales your own kart too, so it matters in a time trial
     // just as much as it does with a field to race.
-    G.cls = clamp(G.cls + dir, 0, CLASSES.length - 1);
+    setClass(G.cls + dir);
   }
   savePrefs();
   updateMenu(menuSel);
@@ -817,8 +817,7 @@ try {
     G.trackIndex = clamp(prefs.trackIndex | 0, 0, trackCount() - 1);
     // `difficulty` is the pre-class key; carry an old preference across rather
     // than resetting someone to the middle class on their next visit.
-    const savedCls = prefs.cls != null ? prefs.cls : prefs.difficulty;
-    G.cls = clamp(savedCls | 0, 0, CLASSES.length - 1);
+    setClass(prefs.cls != null ? prefs.cls : prefs.difficulty);
     G.playerChar = clamp(prefs.playerChar | 0, 0, CHARACTERS.length - 1);
     if (prefs.muted) setFirstInputHook(() => { Sound.init(); Sound.resume(); Sound.toggleMute(); });
   }
