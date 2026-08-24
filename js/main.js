@@ -782,9 +782,22 @@ Playables.onAudioEnabledChange((on) => Sound.setHostAudio(on));
 // surface anything that escapes to the frame loop, which is otherwise invisible
 addEventListener('error', (e) => Playables.logError(e.message || 'error'));
 addEventListener('unhandledrejection', (e) => Playables.logError('unhandled rejection: ' + (e.reason && e.reason.message)));
-// the browser's own backgrounding deserves the same treatment
-addEventListener('visibilitychange', () => {
-  if (document.hidden) onSystemPause(); else onSystemResume();
+// Certification: "Game MUST NOT use the web Page Visibility API ... and MUST
+// only use Playables SDK onPause and onResume." Outside a Playable there is no
+// SDK to tell us we were backgrounded, so the page's own signal is all there
+// is — but inside one it must never be consulted.
+if (!Playables.inYouTube) {
+  addEventListener('visibilitychange', () => {
+    if (document.hidden) onSystemPause(); else onSystemResume();
+  });
+}
+
+// A cloud save that lands after boot gave up waiting still has to be honoured,
+// or the player spends the session looking at defaults.
+Store.onLateHydrate(() => {
+  Garage.load();
+  if (G.state === 'MENU') updateMenu(menuSel);
+  if (G.state === 'GARAGE') { renderGarage(garageSel); applyGaragePreview(); }
 });
 bindScreenButtons({
   onBack: (id) => screenBack(id),
