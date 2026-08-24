@@ -12,6 +12,56 @@ import { ParticlePool, SkidMarks, softDotTexture } from './fx.js';
 import { Garage } from './garage.js';
 import * as Store from './store.js';
 
+// --- adaptive field pace -------------------------------------------------------
+// One fixed AI pace cannot fit somebody's first race and their fiftieth, and
+// picking a number that suits both is not a thing that exists. So the field
+// measures the player instead.
+//
+// At every lap the player completes, compare how far they have come with how
+// far the leading rival has, and nudge the field toward matching. Distance
+// covered in the same elapsed time is a speed ratio directly, which means this
+// works from the end of lap one — waiting for the AI to post a comparable lap
+// time would not, because a player who is running away has not let it.
+//
+// Kept per engine class, because a lap time only means something next to the
+// speed it was set at, and remembered, so the next race starts calibrated
+// rather than starting the argument over. Clamped hard at both ends so neither
+// one scrappy lap nor one blinding one can run away with the difficulty.
+// The floor has to go low enough to give a genuinely slow player a race: at
+// 0.80 a struggling driver still lost by most of a minute with the dial already
+// on its stop, which is the same failure as the walkover, just pointed the
+// other way.
+const PACE_MIN = 0.60, PACE_MAX = 1.75;
+const PACE_GAIN = 0.5;          // share of the measured gap closed per lap
+const PACE_KEY = 'kartrush2.pace.';
+
+function loadPace() {
+  const v = parseFloat(Store.get(PACE_KEY + CLASSES[G.cls].id));
+  G.paceScale = isFinite(v) ? clamp(v, PACE_MIN, PACE_MAX) : 1;
+}
+
+function calibratePace() {
+  if (G.mode === 2) return;                     // a time trial has no field
+  const n = G.track.wps.length;
+  const covered = (r) => (r.rank || 0) - n;     // rank starts a lap in
+  const mine = covered(G.racers[0]);
+  let lead = 0;
+  for (const r of G.racers) {
+    if (r.isPlayer) continue;
+    const c = covered(r);
+    if (c > lead) lead = c;
+  }
+  if (mine <= 0 || lead <= 0) return;
+  const ratio = clamp(mine / lead, 0.75, 1.5);
+  G.paceScale = clamp(G.paceScale * Math.pow(ratio, PACE_GAIN), PACE_MIN, PACE_MAX);
+  Store.set(PACE_KEY + CLASSES[G.cls].id, G.paceScale.toFixed(3));
+}
+
+// How much of a pace adjustment reaches the AI's straight-line speed cap. The
+// rest of it goes into corner commitment, which is where the AI actually loses
+// time and where going faster reads as skill rather than as a cheat.
+const TOP_SHARE = 0.35;
+
 // A shell's own half-width, so it ricochets off the face of the barrier rather
 // than from wherever its centre happens to be.
 const SHELL_RADIUS = 1.2;
@@ -85,6 +135,7 @@ export const G = {
   tune: null,               // built through the setter immediately below
   playerChar: 0,
   rivalId: -1,
+  paceScale: 1,             // adaptive field pace, calibrated to this player
   prevPlayerPlace: 6,
   tauntCd: 0,
   mode: 0,                  // 0 single race, 1 grand prix, 2 time trial
@@ -363,6 +414,7 @@ export function startRace(sceneRef, track, trackIndex) {
   if (!G.track || G.track !== track) scene.add(track.group);
   G.track = track;
   G.trackIndex = trackIndex;
+  loadPace();
   clearProjectiles();
   for (const sm of track.snowmen) { sm.alive = true; sm.group.visible = true; }
   for (const box of track.itemBoxes) {
@@ -511,6 +563,7 @@ function completeLap(r) {
   r.lastLap = lapTime;
   if (r.bestLap == null || lapTime < r.bestLap) r.bestLap = lapTime;
   r.lap++;
+  if (r.isPlayer) calibratePace();
   if (r.lap > G.track.laps) {
     r.finished = true;
     r.finishTime = G.time;
@@ -1136,19 +1189,42 @@ function aiControls(r, dt) {
     wps[(r.wpIdx + 2) % n].curve,
     wps[(r.wpIdx + 4) % n].curve,
     wps[(r.wpIdx + 6) % n].curve);
-  // How much of the corner the AI is willing to take. This is the only dial
-  // that moves its pace: it is corner-limited, so its straight-line speed cap
-  // is almost never what is holding it back.
-  const cornerSpeed = T.topSpeed * clamp(1.06 - curveAhead * 1.15, 0.55, 1) * T.corner;
-  const brake = r.speed > cornerSpeed * 1.12;
-  const coast = r.speed > cornerSpeed;
 
-  // rubber banding: trail the player -> a touch faster, lead -> a touch slower.
-  // The rival bands twice as hard, so it stays glued to you.
+  // One pace number, and it has to reach the corners.
+  //
+  // The AI is corner-limited: its straight-line cap is almost never what holds
+  // it back. So a difficulty dial that only moved `aiGrade` — which is all the
+  // rubber band used to do — moved a ceiling the AI spends most of a lap well
+  // under, and did approximately nothing. Both the band and the adaptive scale
+  // now multiply corner commitment as well, which is the thing that actually
+  // sets a lap time.
+  //
+  // Overcooking a corner is self-limiting now that the barriers are solid: a
+  // kart that carries too much speed scrubs it off against the wall instead of
+  // sailing away across the grass.
   const me = G.racers[0];
   const gap = (me.rank || 0) - (r.rank || 0);
   const band = r.id === G.rivalId ? T.band * 2 : T.band;
-  r.aiGrade = T.skill * a.grade * (1 + clamp(gap / (n * 0.7), -1, 1) * band);
+  // Field pace is for the field. The player is normally driving themselves, but
+  // the autopilot shares this function, and scaling it by the very number it is
+  // being measured against would make the calibration chase its own tail.
+  const adjust = (r.isPlayer ? 1 : G.paceScale) *
+    (1 + clamp(gap / (n * 0.55), -1, 1) * band);
+  const base = T.skill * a.grade;
+
+  // Corner commitment takes the whole adjustment. Measured over a full race at
+  // 50cc the AI never exceeded 55 of its 57 available speed units, so its cap
+  // was never the constraint — the corners were.
+  const cornerSpeed = T.topSpeed * clamp(1.06 - curveAhead * 1.15, 0.55, 1) *
+    T.corner * base * adjust;
+
+  // The straight-line cap takes a damped share of it. A rival that simply
+  // out-drags you down the straight reads as the game cheating however fair
+  // the arithmetic is, where one that carries more speed through a corner just
+  // reads as a better driver.
+  r.aiGrade = base * (1 + (adjust - 1) * TOP_SHARE);
+  const brake = r.speed > cornerSpeed * 1.12;
+  const coast = r.speed > cornerSpeed;
 
   // contextual item usage: bananas go into corner entries, shells need a
   // target roughly ahead; everything else fires on the timer
