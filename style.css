@@ -366,3 +366,293 @@ html, body {
   font-size: 20px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase;
   background: #05060c; z-index: 50;
 }
+
+/* ---- shared tap targets (back / confirm buttons) ---- */
+
+.backBtn {
+  position: absolute; top: 16px; left: 16px;
+  padding: 10px 18px; border-radius: 12px; cursor: pointer;
+  background: rgba(8,10,22,0.6); border: 1px solid var(--panel-line);
+  font-size: 15px; font-weight: 800; letter-spacing: 1px;
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+.backBtn:hover { background: rgba(8,10,22,0.85); border-color: var(--gold); }
+
+#resultsBtns { display: flex; gap: 14px; margin-top: 24px; flex-wrap: wrap; justify-content: center; }
+.bigBtn {
+  padding: 12px 30px; border-radius: 14px; cursor: pointer;
+  background: rgba(8,10,22,0.6); border: 1px solid var(--panel-line);
+  font-size: 19px; font-weight: 800; font-style: italic; letter-spacing: 1px;
+}
+.bigBtn:hover { background: rgba(8,10,22,0.85); }
+.bigBtn.primary { background: rgba(255,217,77,0.16); border-color: var(--gold); color: var(--gold); }
+.bigBtn.primary:hover { background: rgba(255,217,77,0.3); }
+#podiumDone { position: absolute; bottom: 62px; left: 50%; transform: translateX(-50%); }
+
+/* ---- touch controls ---- */
+
+#touchControls {
+  position: absolute; inset: 0;
+  --tb: clamp(62px, 15vmin, 92px);        /* big action button */
+  --tb-s: clamp(50px, 12vmin, 74px);      /* secondary action button */
+  --tb-m: clamp(38px, 9vmin, 50px);       /* mini HUD button */
+}
+
+/* the thumb zone is invisible: the whole lower-left quadrant steers */
+#tSteerZone {
+  position: absolute; left: 0; bottom: 0; width: 46%; height: 74%;
+  pointer-events: auto; touch-action: none;
+}
+
+#tStick {
+  position: fixed; width: 122px; height: 122px; margin: -61px 0 0 -61px;
+  border-radius: 50%; pointer-events: none; opacity: 0;
+  background: rgba(8,10,22,0.35);
+  border: 2px solid rgba(255,255,255,0.22);
+  transition: opacity 0.12s;
+}
+#tStick.on { opacity: 1; }
+#tKnob {
+  position: absolute; left: 50%; top: 50%; width: 54px; height: 54px;
+  margin: -27px 0 0 -27px; border-radius: 50%;
+  background: rgba(255,255,255,0.42);
+  border: 2px solid rgba(255,255,255,0.75);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+}
+
+#tCluster {
+  position: absolute;
+  right: calc(16px + env(safe-area-inset-right));
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  display: grid;
+  grid-template-columns: var(--tb-s) var(--tb);
+  grid-template-rows: auto var(--tb-s) var(--tb);
+  gap: 12px; align-items: end; justify-items: end;
+  pointer-events: none;
+}
+#tAuto { grid-column: 1 / span 2; grid-row: 1; }
+#tGas { grid-column: 1; grid-row: 2; }
+#tItem { grid-column: 2; grid-row: 2; }
+#tBrake { grid-column: 1; grid-row: 3; }
+#tDrift { grid-column: 2; grid-row: 3; }
+
+.tBtn {
+  width: var(--tb-s); height: var(--tb-s); border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(8,10,22,0.42);
+  border: 2px solid rgba(255,255,255,0.28);
+  font-size: clamp(10px, 2.4vmin, 13px); font-weight: 800; letter-spacing: 1px;
+  text-shadow: 0 2px 6px rgba(0,0,0,0.8);
+  pointer-events: auto; touch-action: none;
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  transition: transform 0.08s, background 0.08s;
+}
+.tBtn.big {
+  width: var(--tb); height: var(--tb);
+  font-size: clamp(11px, 2.8vmin, 15px);
+  border-color: var(--gold); color: var(--gold);
+  background: rgba(255,217,77,0.14);
+}
+.tBtn.rev { border-color: #7bff8a; color: #7bff8a; background: rgba(123,255,138,0.16); }
+.tBtn.on { transform: scale(0.9); background: rgba(255,255,255,0.32); }
+.tBtn.big.on { background: rgba(255,217,77,0.42); }
+
+.tPill {
+  padding: 6px 14px; border-radius: 999px;
+  background: rgba(8,10,22,0.42); border: 1px solid rgba(255,255,255,0.24);
+  font-size: 11px; font-weight: 800; letter-spacing: 1.5px; opacity: 0.7;
+  pointer-events: auto; touch-action: none;
+}
+.tPill.on { opacity: 1; border-color: var(--cyan); color: var(--cyan); }
+
+#tTop {
+  position: absolute;
+  right: calc(14px + env(safe-area-inset-right));
+  top: calc(104px + env(safe-area-inset-top));
+  display: flex; flex-direction: column; gap: 10px; align-items: flex-end;
+}
+.tMini {
+  width: var(--tb-m); height: var(--tb-m); border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(8,10,22,0.5); border: 1px solid rgba(255,255,255,0.24);
+  font-size: clamp(13px, 3vmin, 17px); line-height: 1;
+  pointer-events: auto; touch-action: none;
+}
+.tMini:active, .tMini.on { background: rgba(255,255,255,0.3); }
+
+/* ---- touch-mode HUD reflow ---- */
+
+body.touch { overscroll-behavior: none; touch-action: none; }
+body.touch #speedo { display: none; }                 /* the cluster owns that corner */
+body.touch #minimap { width: 108px; height: 108px; left: 12px; bottom: 12px; opacity: 0.8; }
+body.touch #driftbar { bottom: calc(18px + env(safe-area-inset-bottom)); width: 190px; }
+body.touch #menuHelp { display: none; }
+#touchHelp { display: none; }
+body.touch #touchHelp {
+  display: block;
+  position: absolute; bottom: calc(12px + env(safe-area-inset-bottom)); left: 0; right: 0;
+  text-align: center; padding: 0 14px;
+  font-size: clamp(10px, 2.6vw, 13px); line-height: 1.6; opacity: 0.8;
+  text-shadow: 0 2px 6px rgba(0,0,0,0.85);
+}
+#touchHelp b { color: var(--cyan); }
+@media (max-height: 460px) { body.touch #touchHelp { display: none; } }
+body.touch #charHelp, body.touch #garageHelp,
+body.touch #editorHelp, body.touch #resultsHelp, body.touch #podiumHelp { display: none; }
+
+/* ---- small screens (phones, and any narrow window) ---- */
+
+@media (max-width: 760px), (max-height: 460px) {
+  /* the fixed 92px label + 232px value column is wider than a phone */
+  #menu { padding: 2vh 8px 4vh; }
+  #title { font-size: clamp(32px, 11vw, 84px); }
+  #subtitle { font-size: clamp(11px, 3vw, 19px); letter-spacing: 5px; }
+  #menuRows { width: 100%; max-width: 460px; align-items: stretch; }
+  .menuRow { padding: 9px 12px; gap: 8px; }
+  .rowLabel { width: 66px; font-size: 10px; letter-spacing: 1px; }
+  .rowValue { min-width: 0; flex: 1; font-size: clamp(15px, 4.4vw, 22px); }
+  .menuRow.start .rowValue { font-size: clamp(17px, 5.2vw, 26px); }
+  .arrow { padding: 0 2px; }
+  #mBest { font-size: 12px; margin-top: 10px; text-align: center; }
+
+  #lapPanel { top: 10px; left: 10px; padding: 7px 13px; }
+  #lapNum { font-size: 20px; }
+  #raceTime { font-size: 14px; }
+  #posPanel { top: 10px; right: 10px; padding: 3px 13px 6px; }
+  #posNum { font-size: 34px; }
+  #posSuf { font-size: 14px; }
+  #itemSlot { top: 10px; width: 66px; height: 66px; }
+  #itemSlot canvas { width: 54px; height: 54px; }
+  #coinHud { top: 78px; left: 10px; padding: 5px 11px; font-size: 15px; }
+  #countdown { font-size: 84px; }
+  #centerMsg { font-size: 34px; }
+  #lapTimeMsg { font-size: 16px; top: calc(26% + 44px); }
+  #wrongway { font-size: 30px; }
+  #tTop { top: calc(74px + env(safe-area-inset-top)); }
+
+  #resultsTitle { font-size: 34px; }
+  #resultsSub { font-size: 13px; margin: 4px 0 14px; text-align: center; padding: 0 12px; }
+  #resultsTable { min-width: 0; width: min(94vw, 560px); }
+  .resRow {
+    grid-template-columns: 40px 22px 1fr 78px;
+    padding: 7px 11px; font-size: 15px; gap: 8px;
+  }
+  .resRow .place { font-size: 17px; }
+  .resRow .chip { width: 16px; height: 16px; }
+  .resRow .best { display: none; }             /* total is the number that matters */
+  .bigBtn { font-size: 16px; padding: 10px 22px; }
+  #cupStandings { max-width: 94vw; gap: 6px; }
+  .standChip { font-size: 12px; padding: 4px 9px; }
+
+  #charSelTitle { font-size: 26px; }
+  #charName { font-size: 34px; }
+  #charTag { font-size: 14px; }
+  #charCard { gap: 10px; }
+  #charInfo { min-width: 0; }
+  .bigArrow { font-size: 34px; padding: 8px 12px; }
+  #charStats {
+    position: static; transform: none; margin-top: 16px;
+    padding: 12px 14px; gap: 8px;
+  }
+  .statRow span { width: 62px; font-size: 11px; }
+  .statBar { width: min(38vw, 150px); height: 9px; }
+  #charGo { bottom: 8vh; }
+
+  #garageTitle { font-size: 28px; }
+  #gCoins { font-size: 17px; margin: 2px 0 10px; }
+  #garage { padding-top: 8vh; }
+  #gRows { width: 96vw; max-width: 520px; }
+  .gRow { flex-wrap: wrap; gap: 7px; padding: 8px 11px; }
+  .gLabel { width: 100%; font-size: 12px; }
+  .gTier { min-width: 0; flex: 1; font-size: 12px; padding: 7px 5px; }
+  .gTier .cost { font-size: 10px; }
+  .gSwatch { width: 27px; height: 27px; }
+
+  #editorTitle { font-size: 26px; margin-bottom: 8px; }
+  #editorScreen { padding-top: 8vh; }
+  #edMain { flex-direction: column; gap: 12px; align-items: center; }
+  #edCanvas { width: min(84vw, 46vh); height: min(84vw, 46vh); }
+  #edSide { min-width: 0; width: min(84vw, 420px); padding: 12px; gap: 9px; }
+  .edHint { display: none; }
+  #podiumTitle { font-size: 24px; letter-spacing: 1px; }
+  #podiumName { font-size: 40px; }
+  #podiumTable { position: static; transform: none; margin-top: 14px; }
+  #podiumScreen { padding-top: 9vh; }
+  #podiumDone { bottom: 22px; }
+  #pauseMenu h2 { font-size: 40px; margin-bottom: 10px; }
+  .pauseRow { font-size: 21px; padding: 7px 26px; }
+}
+
+/* Screens with variable-height content must never clip what they cannot fit.
+   pan-y keeps them scrollable even under body.touch's touch-action: none. */
+#garage, #editorScreen, #resultsScreen, #podiumScreen, #charSel {
+  overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: pan-y;
+}
+
+/* landscape phones are short: pull everything in so nothing clips */
+@media (max-height: 460px) {
+  #menu { padding: 6px 0; justify-content: center; }
+  #title { font-size: clamp(24px, 10vh, 40px); }
+  #subtitle { font-size: 10px; letter-spacing: 4px; margin: 0 0 6px; }
+  #menuRows { gap: 4px; }
+  .menuRow { padding: 4px 12px; }
+  .rowLabel { font-size: 9px; }
+  .rowValue { font-size: 15px; }
+  .menuRow.start { margin-top: 4px; }
+  .menuRow.start .rowValue { font-size: 17px; }
+  #mBest { margin-top: 6px; font-size: 11px; }
+
+  #charSel, #garage, #editorScreen, #podiumScreen { padding-top: 8px; }
+  #charSelTitle, #garageTitle, #editorTitle, #podiumTitle { font-size: 20px; }
+  #charName { font-size: 26px; }
+  #charCard { margin-top: 2px; }
+  #charStats { margin-top: 8px; padding: 8px 12px; gap: 5px; }
+  .statBar { height: 8px; }
+  #charGo { position: static; transform: none; margin-top: 10px; }
+  #gCoins { font-size: 14px; margin: 0 0 6px; }
+  #gRows { gap: 6px; }
+  .gRow { padding: 5px 10px; gap: 5px; }
+  .gTier { padding: 4px 5px; font-size: 11px; }
+  .gSwatch { width: 22px; height: 22px; }
+
+  /* wide but short: put the editor canvas beside its panel, not above it */
+  #edMain { flex-direction: row; align-items: flex-start; }
+  #edCanvas { width: min(44vw, 74vh); height: min(44vw, 74vh); }
+  #edSide { width: auto; min-width: 190px; padding: 8px 10px; gap: 6px; }
+  .edRow { gap: 6px; }
+  .edValue { font-size: 15px; }
+  .edBtn { padding: 6px 10px; font-size: 14px; }
+
+  #resultsTitle { font-size: 24px; }
+  #resultsSub { font-size: 11px; margin: 2px 0 8px; }
+  #resultsTable { gap: 4px; }
+  .resRow { padding: 4px 10px; font-size: 13px; }
+  .resRow .place { font-size: 14px; }
+  #resultsBtns { margin-top: 10px; gap: 10px; }
+  .bigBtn { font-size: 14px; padding: 7px 18px; }
+  #cupStandings { margin-top: 8px; }
+  .standChip { font-size: 11px; padding: 3px 7px; }
+  #podiumName { font-size: 28px; }
+  #podiumTable { margin-top: 8px; }
+  #podiumDone { position: static; transform: none; margin-top: 10px; }
+  #pauseMenu h2 { font-size: 28px; margin-bottom: 6px; }
+  .pauseRow { font-size: 17px; padding: 4px 20px; }
+
+  .backBtn { top: 8px; left: 8px; padding: 5px 11px; font-size: 12px; }
+}
+
+/* the countdown's pop animation scales past the viewport; clip it there rather
+   than letting the transform create a scrollable overflow area */
+#ui, .screen { overflow-x: clip; }
+#countdown, #centerMsg { will-change: transform; }
+
+#rotateHint {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  top: calc(150px + env(safe-area-inset-top));
+  padding: 10px 16px; border-radius: 12px;
+  background: rgba(8,10,22,0.72); border: 1px solid var(--panel-line);
+  font-size: 13px; font-weight: 700; text-align: center;
+  max-width: 86vw; backdrop-filter: blur(8px);
+  animation: hintIn 0.3s ease-out;
+}
+@keyframes hintIn { from { opacity: 0; transform: translate(-50%, -8px); } }

@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { CFG, CHARACTERS, charStats, DIFFICULTIES, TRACK_DEFS, GP_POINTS } from './config.js';
 import { TAU, clamp, lerp, angNorm } from './util.js';
-import { readControls, itemPressed } from './input.js';
+import { readControls, itemPressed, revving } from './input.js';
 import { Sound } from './audio.js';
 import { KartVisual } from './kart.js';
 import { ParticlePool, SkidMarks, softDotTexture } from './fx.js';
@@ -1243,7 +1243,7 @@ export function stepRace(dt) {
       c = zero;
       // rocket-start timing: track how long the player revs before GO
       if (r.isPlayer && !G.auto && G.state === 'COUNTDOWN') {
-        if (readControls().gas) G.startGasTime += dt;
+        if (revving()) G.startGasTime += dt;
         else G.startGasTime = 0;
       }
     }

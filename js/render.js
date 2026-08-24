@@ -53,7 +53,13 @@ export class Renderer {
       antialias: true,
       powerPreference: 'high-performance',
     });
-    gl.setPixelRatio(Math.min(devicePixelRatio, 2));
+    // Phones lose more to fill rate than to anything else here: a 3x device
+    // pixel ratio means rendering nine times the pixels through MSAA and bloom.
+    // Start conservatively on touch hardware; the adaptive scaler earns it back.
+    this.maxRatio = Math.min(devicePixelRatio, 2);
+    const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+    this.ratio = coarse ? Math.min(devicePixelRatio, 1.5) : this.maxRatio;
+    gl.setPixelRatio(this.ratio);
     gl.outputColorSpace = THREE.SRGBColorSpace;
     gl.toneMapping = THREE.ACESFilmicToneMapping;
     gl.toneMappingExposure = 1.15;
@@ -105,11 +111,24 @@ export class Renderer {
   }
 
   setSize(w, h) {
+    this.w = w; this.h = h;
     this.gl.setSize(w, h, false);
     if (this.composer) {
       this.composer.setSize(w, h);
       this.bloom.setSize(w, h);
     }
+  }
+
+  // Re-render at a different device-pixel ratio. Everything downstream of the
+  // renderer keeps its CSS size; only the buffers change.
+  setRatio(r) {
+    r = Math.max(1, Math.min(this.maxRatio, r));
+    if (Math.abs(r - this.ratio) < 0.01) return false;
+    this.ratio = r;
+    this.gl.setPixelRatio(r);
+    if (this.composer) this.composer.setPixelRatio(r);
+    if (this.w) this.setSize(this.w, this.h);
+    return true;
   }
 
   render() {

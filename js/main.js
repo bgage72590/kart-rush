@@ -4,7 +4,10 @@
 import * as THREE from 'three';
 import { CFG, TRACK_DEFS, DIFFICULTIES } from './config.js';
 import { clamp, lerp, angNorm } from './util.js';
-import { keys, wasPressed, clearPressed, setFirstInputHook } from './input.js';
+import {
+  keys, wasPressed, clearPressed, setFirstInputHook, lookingBack, readControls,
+} from './input.js';
+import { initTouch, setRevMode, touch } from './touch.js';
 import { Sound } from './audio.js';
 import { buildTrackFromDef, invalidateCustomExcept } from './track.js';
 import {
@@ -22,7 +25,7 @@ import {
   showResults, bindMenuClicks, bindPauseClicks, setLoading,
   updateCharSel, bindCharSelClicks,
   renderGarage, bindGarageClicks, garageColCount,
-  showPodium, hidePodium,
+  showPodium, hidePodium, bindScreenButtons,
 } from './hud.js';
 import { CHARACTERS, MODES } from './config.js';
 import { Garage } from './garage.js';
@@ -40,16 +43,41 @@ const camera = new THREE.PerspectiveCamera(CFG.fovBase, 1, 0.5, 2600);
 const sun = new SunShadow(scene, new THREE.Vector3(0.6, 0.8, 0.4));
 rig.attach(scene, camera);
 
+// A narrow window crops the horizontal view — the vertical FOV is what three
+// stores, so portrait would otherwise leave you staring at your own rear wheels.
+// Give some of the width back, capped well short of fisheye.
+let fovBase = CFG.fovBase;
+
 function resize() {
-  const w = innerWidth, h = innerHeight;
+  // A zero-sized viewport is real: an embedding iframe before layout, a tab
+  // restored offscreen, the moment a phone rotates. Zero-size render targets
+  // make every draw call fail with an incomplete framebuffer, so never let one
+  // reach the renderer.
+  const w = Math.max(1, innerWidth), h = Math.max(1, innerHeight);
   rig.setSize(w, h);
   camera.aspect = w / h;
+  fovBase = camera.aspect >= 1.3
+    ? CFG.fovBase
+    : CFG.fovBase * clamp(1.3 / camera.aspect, 1, 1.42);
   camera.updateProjectionMatrix();
+  updateRotateHint();
 }
 addEventListener('resize', resize);
+addEventListener('orientationchange', resize);
 resize();
 
 setFirstInputHook(() => { Sound.init(); Sound.resume(); });
+
+// Portrait plays, but the track reads far better across the long edge. Nudge
+// once per session while racing, and drop the nudge the moment they turn.
+let rotateNudged = false;
+function updateRotateHint() {
+  const hint = document.getElementById('rotateHint');
+  if (!hint) return;
+  const portrait = innerHeight > innerWidth;
+  const racing = G.state === 'COUNTDOWN' || G.state === 'RACE';
+  hint.classList.toggle('hidden', !(portrait && racing && touch.active && !rotateNudged));
+}
 
 // --- state ------------------------------------------------------------------
 
@@ -58,9 +86,33 @@ let pauseSel = 0;
 let garageSel = { row: 0, col: 0 };
 let attachedTrack = null;
 let goTimer = 0;
-let fov = CFG.fovBase;
+let fov = fovBase;
 let prevState = '';
 const stats = { frames: 0, ms: 0, fps: 0, last: performance.now() };
+
+// Adaptive resolution. Sustained slow frames step the render scale down; a
+// sustained comfortable stretch earns it back. Hysteresis on both sides and a
+// cooldown after every change, so it settles instead of oscillating.
+const RATIO_STEPS = [1, 1.25, 1.5, 1.75, 2];
+const quality = { avg: 16, slow: 0, fast: 0, cooldown: 2 };
+
+function adaptQuality(frameMs) {
+  quality.avg += (frameMs - quality.avg) * 0.08;
+  if (quality.cooldown > 0) { quality.cooldown -= frameMs / 1000; return; }
+  if (quality.avg > 22) { quality.slow += frameMs / 1000; quality.fast = 0; }
+  else if (quality.avg < 13) { quality.fast += frameMs / 1000; quality.slow = 0; }
+  else { quality.slow = quality.fast = 0; }
+
+  let step = RATIO_STEPS.findIndex((r) => r >= rig.ratio - 0.01);
+  if (step < 0) step = RATIO_STEPS.length - 1;
+  if (quality.slow > 1 && step > 0) {
+    if (rig.setRatio(RATIO_STEPS[step - 1])) { quality.cooldown = 2; quality.avg = 16; }
+    quality.slow = 0;
+  } else if (quality.fast > 4 && step < RATIO_STEPS.length - 1) {
+    if (rig.setRatio(RATIO_STEPS[step + 1])) { quality.cooldown = 2; quality.avg = 16; }
+    quality.fast = 0;
+  }
+}
 
 function attachTrack(index) {
   const def = getTrackDef(index);
@@ -92,9 +144,11 @@ function clearProjectiles() {
 
 function doStartRace() {
   hideCharPreview();
+  rotateHintTimer = 5;
   const track = attachTrack(G.trackIndex);
   startRace(scene, track, G.trackIndex, G.difficulty);
   showScreen('hud');
+  setRevMode(true);          // countdown: the gas button doubles as REV
 }
 
 // --- character select preview -------------------------------------------------
@@ -149,6 +203,7 @@ function charSelDir(dir) {
 }
 
 function quitToMenu() {
+  setRevMode(false);
   clearProjectiles();
   clearFx();
   hideRacers();
@@ -164,6 +219,7 @@ function quitToMenu() {
 
 // --- podium ceremony ----------------------------------------------------------
 
+let rotateHintTimer = 0;
 let podiumTimer = 0;
 let podiumSteps = null;
 const podiumFocus = new THREE.Vector3();
@@ -238,8 +294,8 @@ function applyCamera(dt) {
   let camAngle = G.cam.angle;
   if (G.state === 'COUNTDOWN') camAngle += (G.countdown / 3.6) * 2.3;
 
-  // hold C (or gamepad Y already mapped to item — keyboard only) to look back
-  const wantBack = (G.state === 'RACE' && (keys['c'] || keys['v'])) ? 1 : 0;
+  // hold C (or the touch eye button) to look back
+  const wantBack = (G.state === 'RACE' && lookingBack()) ? 1 : 0;
   lookBack += (wantBack - lookBack) * Math.min(1, dt * 10);
   if (lookBack > 0.02) camAngle += Math.PI * lookBack;
 
@@ -268,7 +324,7 @@ function applyCamera(dt) {
   sun.follow(p.x, p.groundY, p.z);        // keep the shadow box on the action
   if (Math.abs(camLat) > 0.05) camera.rotateZ(camLat * 0.012);   // subtle roll into the drift
 
-  const wantFov = CFG.fovBase + speedRatio * 6 + (p.boost > 0 ? 7 : 0);
+  const wantFov = fovBase + speedRatio * 6 + (p.boost > 0 ? 7 : 0);
   fov = lerp(fov, wantFov, Math.min(1, dt * 5));
   if (Math.abs(fov - camera.fov) > 0.05) {
     camera.fov = fov;
@@ -306,8 +362,8 @@ function menuCamera(time) {
   camera.position.set(x - a.tx * 26, y + 13, z - a.tz * 26);
   camera.lookAt(ahead.x, ahead.y + 3, ahead.z);
   sun.follow(x, y, z);
-  if (camera.fov !== CFG.fovBase) {
-    camera.fov = CFG.fovBase;
+  if (camera.fov !== fovBase) {
+    camera.fov = fovBase;
     camera.updateProjectionMatrix();
   }
 }
@@ -501,8 +557,49 @@ function menuArrow(row, dir) {
 function handlePause() {
   if (wasPressed('ArrowDown') || wasPressed('s')) { pauseSel = (pauseSel + 1) % 3; updatePause(pauseSel); }
   if (wasPressed('ArrowUp') || wasPressed('w')) { pauseSel = (pauseSel + 2) % 3; updatePause(pauseSel); }
-  if (wasPressed('Escape') || wasPressed('p')) { G.state = prevState || 'RACE'; showScreen('hud'); return; }
+  if (wasPressed('Escape') || wasPressed('p')) { togglePause(); return; }
   if (wasPressed('Enter') || wasPressed(' ')) pauseAction(pauseSel);
+}
+
+// Escape/pause-button behaviour, shared by the key and the touch button.
+function togglePause() {
+  if (G.state === 'RACE' || G.state === 'COUNTDOWN') {
+    prevState = G.state;
+    G.state = 'PAUSE';
+    pauseSel = 0;
+    showScreen('pauseMenu');
+    updatePause(0);
+    Sound.updateEngine(0, false, 0);
+  } else if (G.state === 'PAUSE') {
+    G.state = prevState || 'RACE';
+    showScreen('hud');
+  }
+}
+
+// RESULTS: continue (next cup race / podium / rematch) and bail out.
+function resultsContinue() {
+  if (G.state !== 'RESULTS') return;
+  if (G.mode === 1 && G.gp) {
+    if (G.gp.race >= 5) { enterPodium(); return; }
+    G.trackIndex = G.gp.race;
+  }
+  doStartRace();
+}
+
+function resultsQuit() {
+  if (G.state !== 'RESULTS') return;
+  G.gp = null;
+  quitToMenu();
+}
+
+// The visible BACK buttons on character select / garage / track lab.
+const BACK_FROM = { charBack: 'CHARSEL', garageBack: 'GARAGE', edBack: 'EDITOR' };
+function screenBack(which) {
+  if (G.state !== BACK_FROM[which]) return;
+  hideCharPreview();               // no-op unless a preview kart is on screen
+  G.state = 'MENU';
+  showScreen('menu');
+  updateMenu(menuSel);
 }
 
 function pauseAction(row) {
@@ -528,6 +625,13 @@ bindMenuClicks(
 bindPauseClicks((row) => pauseAction(row));
 bindCharSelClicks((dir) => charSelDir(dir), () => doStartRace());
 bindGarageClicks((row, col) => garageActivate(row, col));
+bindScreenButtons({
+  onBack: (id) => screenBack(id),
+  onResultsAgain: () => resultsContinue(),
+  onResultsMenu: () => resultsQuit(),
+  onPodiumDone: () => exitPodium(),
+});
+initTouch({ onPause: () => togglePause() });
 
 // remember mode/track/rivals/character/mute across visits
 function savePrefs() {
@@ -608,6 +712,7 @@ function frame(now) {
       updateGateLamps();
       if (G.countdown <= 0.8) {
         // GO! — controls unlock the moment the green shows
+        setRevMode(false);
         G.state = 'RACE';
         G.time = 0;
         goTimer = 0.8;
@@ -615,11 +720,7 @@ function frame(now) {
         for (const r of G.racers) r.lapStart = 0;
         resolveRocketStart();
       }
-      if (wasPressed('Escape') || wasPressed('p')) {
-        prevState = 'COUNTDOWN';
-        G.state = 'PAUSE'; pauseSel = 0; showScreen('pauseMenu'); updatePause(0);
-        Sound.updateEngine(0, false, 0);
-      }
+      if (wasPressed('Escape') || wasPressed('p')) togglePause();
       break;
     }
 
@@ -645,11 +746,7 @@ function frame(now) {
         showScreen('resultsScreen');
         Sound.updateEngine(0, false, 0);
       }
-      if (wasPressed('Escape') || wasPressed('p')) {
-        prevState = 'RACE';
-        G.state = 'PAUSE'; pauseSel = 0; showScreen('pauseMenu'); updatePause(0);
-        Sound.updateEngine(0, false, 0);
-      }
+      if (wasPressed('Escape') || wasPressed('p')) togglePause();
       if (wasPressed('r')) doStartRace();
       break;
     }
@@ -671,16 +768,8 @@ function frame(now) {
         G.results = G.racers.slice().sort((a, b) => a.place - b.place);
         showResults();
       }
-      if (wasPressed('Enter')) {
-        if (G.mode === 1 && G.gp) {
-          if (G.gp.race >= 5) enterPodium();
-          else {
-            G.trackIndex = G.gp.race;
-            doStartRace();
-          }
-        } else doStartRace();
-      }
-      if (wasPressed('Escape')) { G.gp = null; quitToMenu(); }
+      if (wasPressed('Enter')) resultsContinue();
+      if (wasPressed('Escape')) resultsQuit();
       break;
     }
 
@@ -707,11 +796,18 @@ function frame(now) {
     }
   }
 
+  if (rotateHintTimer > 0) {
+    rotateHintTimer -= dt;
+    updateRotateHint();
+    if (rotateHintTimer <= 0) { rotateNudged = true; updateRotateHint(); }
+  }
+
   if (wasPressed('m')) { Sound.toggleMute(); savePrefs(); }
   Sound.updateMusic();
 
-  rig.render();
+  if (innerWidth > 0 && innerHeight > 0) rig.render();   // nothing to draw into yet
   clearPressed();
+  adaptQuality(dt * 1000);      // dt is the real frame interval under rAF
 
   // fps stats
   stats.frames++;
@@ -733,4 +829,8 @@ window.__kr = {
   applyCamera, updateHUD, showResults, showScreen,
   renderOnce: () => renderer.render(scene, camera),
   setAuto: (v) => { G.auto = v; },
+  touch, readControls, togglePause, resultsContinue, rig, quality,
+  // Pump one frame by hand. Lets a headless harness run whole races
+  // deterministically instead of waiting on requestAnimationFrame.
+  tick: (ms = 1000 / 60) => frame(last + ms),
 };

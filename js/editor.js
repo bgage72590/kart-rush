@@ -20,13 +20,13 @@ export class TrackEditor {
     this.def = null;
     this.dragIdx = -1;
     this.hoverIdx = -1;
+    this.lastTap = { t: -1e9, p: [0, 0] };
 
     canvas.addEventListener('pointerdown', (e) => this._down(e));
     canvas.addEventListener('pointermove', (e) => this._move(e));
     addEventListener('pointerup', () => this._up());
     addEventListener('pointercancel', () => this._up());
     canvas.addEventListener('contextmenu', (e) => { e.preventDefault(); this._up(); });
-    canvas.addEventListener('dblclick', (e) => this._dbl(e));
   }
 
   setDef(def) {
@@ -54,17 +54,31 @@ export class TrackEditor {
   _down(e) {
     if (!this.def || e.button !== 0) return;      // left button only
     const p = this._pos(e);
+
+    // Double-tap detected by hand rather than via dblclick: a touchscreen with
+    // touch-action:none does not reliably synthesise dblclick, and the editor's
+    // add/remove is the only way to reshape a track.
+    const now = e.timeStamp;
+    const near = Math.hypot(p[0] - this.lastTap.p[0], p[1] - this.lastTap.p[1]) < 0.04;
+    if (now - this.lastTap.t < 340 && near) {
+      this.lastTap.t = -1e9;
+      this.dragIdx = -1;                          // never drag a point we just removed
+      this._dbl(p);
+      return;
+    }
+    this.lastTap = { t: now, p };
+
     const n = this._nearest(p);
     if (n.d < 0.045) {
       this.dragIdx = n.i;
-      this.cv.setPointerCapture(e.pointerId);
+      try { this.cv.setPointerCapture(e.pointerId); } catch (err) { /* pointer gone */ }
     }
   }
 
   _move(e) {
     if (!this.def) return;
     const p = this._pos(e);
-    if (this.dragIdx >= 0) {
+    if (this.dragIdx >= 0 && this.dragIdx < this.def.points.length) {
       this.def.points[this.dragIdx] = [clamp(p[0], 0.05, 0.95), clamp(p[1], 0.05, 0.95)];
       this.render();
     } else {
@@ -82,9 +96,9 @@ export class TrackEditor {
     }
   }
 
-  _dbl(e) {
+  // p is already in normalized canvas space.
+  _dbl(p) {
     if (!this.def) return;
-    const p = this._pos(e);
     const n = this._nearest(p);
     const pts = this.def.points;
     if (n.d < 0.045) {

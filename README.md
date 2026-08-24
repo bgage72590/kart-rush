@@ -58,6 +58,36 @@ then open <http://localhost:8123>. (ES modules need a server — double-clicking
 
 Gamepads work too (stick + A/B/triggers, bumpers to drift).
 
+## Touch
+
+Touch controls arm themselves on the first touch and disappear again on the
+first key press, so a laptop with a touchscreen never gets a permanent overlay.
+
+| Control | Where |
+| --- | --- |
+| steer | drag anywhere in the lower-left; the stick appears under your thumb |
+| DRIFT | big gold button, bottom right |
+| ITEM | above DRIFT |
+| BRAKE | left of DRIFT |
+| AUTO / MANUAL | pill above the cluster — auto-accelerate is the default so the right thumb stays free; tapping it swaps in a GAS pedal |
+| REV | the gas slot during the countdown, for the rocket start |
+| look behind / pause | the two small buttons on the right edge |
+
+Menus, the garage, Track Lab and the results and podium screens are all
+tappable, with visible BACK / RACE AGAIN / CONTINUE buttons rather than
+keyboard-only exits. In Track Lab, double-*tap* adds and removes control points.
+
+Portrait plays, and the camera widens to give back some of the view a narrow
+window crops, but the track reads far better across the long edge — the game
+says so once, then stops nagging.
+
+## Performance
+
+Render resolution adapts: touch devices start at 1.5x device pixels instead of
+2x, sustained slow frames step the scale down toward 1x, and a sustained
+comfortable stretch earns it back. Hysteresis and a cooldown on both sides keep
+it from oscillating.
+
 ## Code map
 
 | File | Role |
@@ -72,7 +102,21 @@ Gamepads work too (stick + A/B/triggers, bumpers to drift).
 | `js/fx.js` | particle pools, skid marks, blob shadows |
 | `js/audio.js` | WebAudio synth: engine, SFX, music |
 | `js/garage.js` | wallet, parts, paint (localStorage) |
-| `js/main.js` | renderer, camera, state machine, main loop |
+| `js/touch.js` | on-screen controls, auto-accelerate, touch-mode arming |
+| `js/main.js` | renderer, camera, state machine, main loop, adaptive resolution |
 
-Saved data (best laps, ghosts, coins, parts) lives in `localStorage` under
-`kartrush2.*`.
+Saved data (best laps, ghosts, coins, parts, the auto-accelerate preference)
+lives in `localStorage` under `kartrush2.*`.
+
+## Testing
+
+`window.__kr` exposes the game state plus a `tick(ms)` hook that pumps one
+frame by hand, so a whole race can be simulated deterministically from the
+console without waiting on `requestAnimationFrame`:
+
+```js
+__kr.G.auto = true;                    // autopilot drives the player
+__kr.attachTrack(0); __kr.doStartRace();
+while (__kr.G.state !== 'RESULTS') __kr.tick(1000 / 25);
+__kr.G.racers.map((r) => [r.name, r.place, r.bestLap]);
+```

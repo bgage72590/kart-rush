@@ -2,6 +2,7 @@
 // Keyboard + gamepad input.
 // ---------------------------------------------------------------------------
 import { clamp } from './util.js';
+import { touch, takeItemEdge } from './touch.js';
 
 export const keys = {};
 const pressed = {};
@@ -25,9 +26,14 @@ addEventListener('keydown', (e) => {
 });
 addEventListener('keyup', (e) => { keys[normKey(e)] = false; });
 addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
-addEventListener('mousedown', () => {
+// Any first gesture unlocks WebAudio. `pointerdown` covers mouse, touch and
+// pen; `touchstart` is the belt-and-braces fallback for older mobile Safari,
+// where a pointerdown can arrive too late to count as the unlocking gesture.
+const firstGesture = () => {
   if (onFirstInput) { onFirstInput(); onFirstInput = null; }
-});
+};
+addEventListener('pointerdown', firstGesture);
+addEventListener('touchstart', firstGesture, { passive: true });
 
 export function wasPressed(k) { return !!pressed[k]; }
 export function clearPressed() { for (const k in pressed) delete pressed[k]; }
@@ -59,8 +65,33 @@ export function readControls() {
     if (b[2]?.pressed || b[3]?.pressed) c.item = true;
     if (b[12]?.pressed) c.gas = true;
   }
+  if (touch.active) {
+    if (touch.steer !== 0) c.steer = clamp(c.steer + touch.steer, -1, 1);
+    // auto-accelerate frees the right thumb for drift/item; braking still wins
+    if (touch.autoGas ? !touch.brake : touch.gas) c.gas = true;
+    if (touch.brake) c.brake = true;
+    if (touch.drift) c.drift = true;
+    if (touch.item) c.item = true;
+  }
+
   c.steer = clamp(c.steer, -1, 1);
   return c;
+}
+
+// Genuine "hold the gas" input for the rocket start. Auto-accelerate must not
+// count, or every touch start would read as a 3.6-second bog; the touch layer
+// surfaces a REV button during the countdown instead.
+export function revving() {
+  if (keys['ArrowUp'] || keys['w']) return true;
+  const g = pad();
+  if (g && (g.buttons[0]?.pressed || (g.buttons[7] && g.buttons[7].value > 0.3) ||
+    g.buttons[12]?.pressed)) return true;
+  return !!(touch.active && touch.gas);
+}
+
+// True while the player is holding the look-behind control.
+export function lookingBack() {
+  return !!(keys['c'] || keys['v'] || (touch.active && touch.look));
 }
 
 // Edge detector for the gamepad item button (space/z edges come from pressed{}).
@@ -75,5 +106,8 @@ export function padItemEdge() {
 }
 
 export function itemPressed() {
-  return wasPressed(' ') || wasPressed('z') || padItemEdge();
+  // every edge detector must tick each frame, so evaluate before combining
+  const pad = padItemEdge();
+  const tap = takeItemEdge();
+  return wasPressed(' ') || wasPressed('z') || pad || tap;
 }

@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#05060c">
 <title>Kart Rush</title>
 <link rel="stylesheet" href="style.css">
 <script type="importmap">
@@ -33,6 +36,23 @@
     <div id="lapTimeMsg"></div>
     <div id="wrongway" class="hidden">WRONG WAY</div>
     <div id="countdown" class="hidden"></div>
+  </div>
+
+  <!-- touch driving controls -->
+  <div id="touchControls" class="hidden">
+    <div id="tSteerZone"></div>
+    <div id="tStick"><div id="tKnob"></div></div>
+    <div id="tCluster">
+      <div id="tAuto" class="tPill">AUTO</div>
+      <div id="tGas" class="tBtn hidden">GAS</div>
+      <div id="tBrake" class="tBtn">BRAKE</div>
+      <div id="tItem" class="tBtn">ITEM</div>
+      <div id="tDrift" class="tBtn big">DRIFT</div>
+    </div>
+    <div id="tTop">
+      <div id="tLook" class="tMini" aria-label="look behind">&#128065;</div>
+      <div id="tPause" class="tMini" aria-label="pause">&#10073;&#10073;</div>
+    </div>
   </div>
 
   <!-- main menu -->
@@ -69,6 +89,10 @@
       <div class="menuRow start" data-row="5"><span class="rowValue" id="mStart">START RACE</span></div>
     </div>
     <div id="mBest">Best lap —</div>
+    <div id="touchHelp">
+      tap to choose · drag the left side to steer · <b>DRIFT</b> to slide · <b>ITEM</b> to fire<br>
+      <b>AUTO</b> drives for you — tap it for a manual pedal · hold <b>REV</b> on the last countdown beat for a rocket start
+    </div>
     <div id="menuHelp">
       ↑↓ select · ←→ change · Enter start<br>
       drive: <b>↑/W</b> gas · <b>↓/S</b> brake · <b>←→/AD</b> steer · <b>Shift</b> hop/drift · <b>Space</b> item · <b>C</b> look back · <b>M</b> mute · <b>Esc</b> pause<br>
@@ -94,6 +118,7 @@
       <div class="statRow"><span>WEIGHT</span><div class="statBar"><div id="stMass" class="statFill"></div></div></div>
     </div>
     <div id="charGo" class="menuRow start sel"><span class="rowValue">LET'S RACE</span></div>
+    <div id="charBack" class="backBtn">‹ BACK</div>
     <div id="charHelp">←→ choose · Enter race · Esc back</div>
   </div>
 
@@ -117,9 +142,10 @@
         </div>
         <div class="edBtn" id="edRandom">🎲 RANDOMIZE</div>
         <div class="edBtn primary" id="edTest">🏁 RACE IT</div>
-        <div class="edHint">drag points to shape the road<br>double-click road: add a point<br>double-click a point: remove it</div>
+        <div class="edHint">drag points to shape the road<br>double-tap the road: add a point<br>double-tap a point: remove it</div>
       </div>
     </div>
+    <div id="edBack" class="backBtn">‹ BACK</div>
     <div id="editorHelp"><b>Esc</b> back · your track saves automatically and appears in the TRACK list</div>
   </div>
 
@@ -128,6 +154,7 @@
     <h2 id="garageTitle">GARAGE</h2>
     <div id="gCoins">🪙 0</div>
     <div id="gRows"></div>
+    <div id="garageBack" class="backBtn">‹ BACK</div>
     <div id="garageHelp">↑↓ part · ←→ option · Enter buy / equip · Esc back</div>
   </div>
 
@@ -145,6 +172,10 @@
     <div id="resultsSub"></div>
     <div id="resultsTable"></div>
     <div id="cupStandings" class="hidden"></div>
+    <div id="resultsBtns">
+      <div id="resAgain" class="bigBtn primary">RACE AGAIN</div>
+      <div id="resMenu" class="bigBtn">MENU</div>
+    </div>
     <div id="resultsHelp"><b>Enter</b> race again · <b>Esc</b> menu</div>
   </div>
 
@@ -153,8 +184,11 @@
     <h2 id="podiumTitle">CUP CHAMPION</h2>
     <div id="podiumName">Dash</div>
     <div id="podiumTable"></div>
+    <div id="podiumDone" class="bigBtn primary">CONTINUE</div>
     <div id="podiumHelp"><b>Enter</b> back to menu</div>
   </div>
+
+  <div id="rotateHint" class="hidden">↻ &nbsp;Turn your phone sideways for the full track view</div>
 
   <div id="loading">building track…</div>
 </div>

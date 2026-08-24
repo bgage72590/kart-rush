@@ -7,6 +7,7 @@ import { clamp, fmtTime, ordinal, suffix, TAU, makeCanvas } from './util.js';
 import { G, getBestForDef } from './race.js';
 import { Garage, PARTS, PAINTS } from './garage.js';
 import { getTrackDef } from './tracklab.js';
+import { showTouchControls } from './touch.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -153,6 +154,9 @@ export function showScreen(name) {
     node.classList.toggle('hidden', s !== name && !(name === 'pauseMenu' && s === 'hud'));
   }
   if (name === 'pauseMenu') el.hud.classList.remove('hidden');
+  // the driving controls belong to the race only — the pause menu shows the
+  // HUD behind it, but must not leave a live gas pedal under the dialog
+  showTouchControls(name === 'hud');
 }
 
 export function hideLoading() { el.loading.classList.add('hidden'); }
@@ -235,6 +239,15 @@ export function bindMenuClicks(onRow, onArrow) {
       onArrow(parseInt(ar.closest('.menuRow').dataset.row, 10), parseInt(ar.dataset.dir, 10));
     });
   });
+}
+
+export function bindScreenButtons({ onBack, onResultsAgain, onResultsMenu, onPodiumDone }) {
+  for (const id of ['charBack', 'garageBack', 'edBack']) {
+    $(id).addEventListener('click', () => onBack(id));
+  }
+  $('resAgain').addEventListener('click', () => onResultsAgain());
+  $('resMenu').addEventListener('click', () => onResultsMenu());
+  $('podiumDone').addEventListener('click', () => onPodiumDone());
 }
 
 export function bindPauseClicks(onRow) {
@@ -473,8 +486,12 @@ export function showResults() {
     $('resultsHelp').innerHTML = last
       ? '<b>Enter</b> — podium ceremony'
       : '<b>Enter</b> — next race (' + (G.gp.race + 1) + '/5) · <b>Esc</b> abandon cup';
+    $('resAgain').textContent = last ? 'PODIUM' : 'NEXT RACE (' + (G.gp.race + 1) + '/5)';
+    $('resMenu').textContent = 'ABANDON CUP';
   } else {
     $('resultsHelp').innerHTML = '<b>Enter</b> race again · <b>Esc</b> menu';
+    $('resAgain').textContent = 'RACE AGAIN';
+    $('resMenu').textContent = 'MENU';
   }
   renderCupStandings('cupStandings');
   el.resultsTable.innerHTML = '';
