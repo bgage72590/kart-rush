@@ -11,6 +11,9 @@ import { showTouchControls } from './touch.js';
 
 const $ = (id) => document.getElementById(id);
 
+const MAP_U = 180;      // minimap authoring units
+const SPD_U = 160;      // speedometer authoring units
+
 const el = {};
 let itemCtx = null, mapCtx = null, spdCtx = null;
 let lastCountdownText = '';
@@ -26,9 +29,15 @@ let lastCountdownText = '';
 // most a couple of interior details. Anything finer turns to noise at the 54px
 // the HUD uses on a phone.
 
+// Certification: graphics "MUST NOT be blurry, pixelated, or stretched". A
+// canvas whose backing store is authored at CSS size is exactly that on any
+// device with a pixel ratio above 1, so every HUD canvas is rasterised at
+// device resolution and its context scaled back into authoring units.
+const HUD_DPR = Math.min(3, Math.max(1, Math.ceil(devicePixelRatio || 1)));
+
 const ICONS = {};
 const ICON_U = 76;                                   // authoring units
-const ICON_PX = ICON_U * Math.min(3, Math.max(1, Math.ceil(devicePixelRatio || 1)));
+const ICON_PX = ICON_U * HUD_DPR;
 
 function drawIcons() {
   const mk = (fn) => {
@@ -443,12 +452,20 @@ export function initHUD() {
     'centerMsg', 'lapTimeMsg', 'wrongway', 'countdown', 'mTrack', 'mDiff', 'mBest',
     'resultsTitle', 'resultsSub', 'resultsTable',
   ].forEach((id) => { el[id] = $(id); });
-  // give the slot a device-resolution backing store; CSS keeps its layout size
+  // device-resolution backing stores; CSS keeps every one at its layout size
   el.itemIcon.width = ICON_PX;
   el.itemIcon.height = ICON_PX;
   itemCtx = el.itemIcon.getContext('2d');
+
+  el.minimap.width = MAP_U * HUD_DPR;
+  el.minimap.height = MAP_U * HUD_DPR;
   mapCtx = el.minimap.getContext('2d');
+  mapCtx.scale(HUD_DPR, HUD_DPR);
+
+  el.speedo.width = SPD_U * HUD_DPR;
+  el.speedo.height = SPD_U * HUD_DPR;
   spdCtx = el.speedo.getContext('2d');
+  spdCtx.scale(HUD_DPR, HUD_DPR);
   drawIcons();
 }
 
@@ -662,8 +679,8 @@ export function updateHUD() {
   }
 
   // minimap
-  mapCtx.clearRect(0, 0, 180, 180);
-  mapCtx.drawImage(track.minimap, 0, 0);
+  mapCtx.clearRect(0, 0, MAP_U, MAP_U);
+  mapCtx.drawImage(track.minimap, 0, 0, MAP_U, MAP_U);
   for (let i = G.racers.length - 1; i >= 0; i--) {
     const r = G.racers[i];
     const [mx, my] = track.worldToMap(r.x, r.z);
@@ -677,7 +694,7 @@ export function updateHUD() {
   }
 
   // speedometer
-  const S = 160, cx = S / 2, cy = S / 2 + 6, rad = 58;
+  const S = SPD_U, cx = S / 2, cy = S / 2 + 6, rad = 58;
   spdCtx.clearRect(0, 0, S, S);
   spdCtx.fillStyle = 'rgba(8,10,22,0.55)';
   spdCtx.beginPath();

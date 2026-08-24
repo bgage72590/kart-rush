@@ -989,9 +989,12 @@ export function buildTrackFromDef(def, key) {
 
   // --- minimap ----------------------------------------------------------------------
 
-  const minimap = makeCanvas(180, 180);
+  // rendered at device resolution so the HUD does not upscale it into mush
+  const MAP_DPR = Math.min(3, Math.max(1, Math.ceil((typeof devicePixelRatio === 'number' ? devicePixelRatio : 1))));
+  const minimap = makeCanvas(180 * MAP_DPR, 180 * MAP_DPR);
   {
     const g = minimap.getContext('2d');
+    g.scale(MAP_DPR, MAP_DPR);
     const toMap = (x, z) => [(x + E) / (2 * E) * 164 + 8, (z + E) / (2 * E) * 164 + 8];
     g.beginPath();
     for (let i = 0; i < N; i += 4) {

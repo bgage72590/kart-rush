@@ -49,6 +49,7 @@ rig.attach(scene, camera);
 // stores, so portrait would otherwise leave you staring at your own rear wheels.
 // Give some of the width back, capped well short of fisheye.
 let fovBase = CFG.fovBase;
+let lastW = -1, lastH = -1;
 
 function resize() {
   // A zero-sized viewport is real: an embedding iframe before layout, a tab
@@ -56,6 +57,7 @@ function resize() {
   // make every draw call fail with an incomplete framebuffer, so never let one
   // reach the renderer.
   const w = Math.max(1, innerWidth), h = Math.max(1, innerHeight);
+  lastW = innerWidth; lastH = innerHeight;
   rig.setSize(w, h);
   camera.aspect = w / h;
   fovBase = camera.aspect >= 1.3
@@ -817,16 +819,21 @@ attachTrack(G.trackIndex);
 setLoading(false);
 showScreen('menu');
 updateMenu(menuSel);
-Playables.gameReady();
 
 // --- main loop ---------------------------------------------------------------------
 
 let last = performance.now();
 let dtSmooth = 1 / 60;
 let firstFrameSent = false;
+let gameReadySent = false;
 
 function frame(now) {
   requestAnimationFrame(frame);
+  // Certification requires adjusting automatically whenever the viewport
+  // changes, and the resize event cannot be trusted to deliver that — iOS
+  // Safari's collapsing toolbar is the usual culprit. Two integer compares a
+  // frame is cheaper than being wrong about it.
+  if (innerWidth !== lastW || innerHeight !== lastH) resize();
   let dt = (now - last) / 1000;
   last = now;
   if (dt > 1 / 20) dt = 1 / 20;
@@ -979,7 +986,16 @@ function frame(now) {
   Sound.updateMusic();
 
   if (innerWidth > 0 && innerHeight > 0) rig.render();   // nothing to draw into yet
-  if (!firstFrameSent) { firstFrameSent = true; Playables.firstFrameReady(); }
+  // Certification wants firstFrameReady as soon as something is on screen, and
+  // gameReady only once the player can actually interact — in that order. The
+  // menu is live from the frame after the first one is drawn.
+  if (!firstFrameSent) {
+    firstFrameSent = true;
+    Playables.firstFrameReady();
+  } else if (!gameReadySent) {
+    gameReadySent = true;
+    Playables.gameReady();
+  }
   clearPressed();
   adaptQuality(dt * 1000);      // dt is the real frame interval under rAF
 

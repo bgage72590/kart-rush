@@ -2,15 +2,16 @@
 // Entry point.
 //
 // Every module reads its slice of save data at import time (the garage loads
-// its wallet, main reads prefs), so the Playables cloud save has to be in
-// localStorage before any of them run. Hydrate first, then import the game.
-//
-// The cloud is never allowed to hold the game hostage: if the SDK is missing,
-// slow or broken, we boot on whatever is stored locally.
+// its wallet, main reads prefs), so the cloud save has to be in the store
+// before any of them run. Hydrate first, then import the game.
 // ---------------------------------------------------------------------------
-import { hydrate } from './store.js';
+import { hydrate, markBootComplete } from './store.js';
 
-const HYDRATE_TIMEOUT = 3000;
+// Generous, because certification requires awaiting loadData and a real cloud
+// round-trip is well under a second. If it does expire, the game still boots on
+// defaults — and the store keeps every save blocked until the load lands, so a
+// late arrival can never be clobbered by one.
+const HYDRATE_TIMEOUT = 10000;
 
 function withTimeout(promise, ms) {
   return Promise.race([
@@ -26,3 +27,4 @@ try {
 }
 
 await import('./main.js');
+markBootComplete();

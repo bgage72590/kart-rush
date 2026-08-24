@@ -94,13 +94,15 @@ through `js/playables.js` is guarded.
   resume will not yank them out of it.
 - **Audio policy** — YouTube can disallow sound entirely. That is a separate
   gate from the player's own mute; either one silences the game.
-- **Cloud save** — the whole `kartrush2.*` namespace is mirrored to the account
-  save, so coins, parts, best laps, ghosts and your custom track follow you to
-  another device. localStorage stays the synchronous working store; writes are
-  debounced into one upload and flushed immediately on a host pause. Hydration
-  runs before any module reads its slice, with a timeout — a slow or broken
-  cloud never holds the game hostage — and keys outside the namespace are
-  refused in both directions.
+- **Cloud save** — the whole `kartrush2.*` namespace lives in the account save,
+  so coins, parts, best laps, ghosts and your custom track follow you to another
+  device. Certification is explicit that it "MUST NOT use any other mechanism to
+  save user progress", so inside a Playable localStorage is never touched at
+  all: reads and writes go through an in-memory mirror hydrated from the cloud
+  at boot. Served anywhere else, localStorage is the store. Writes are debounced
+  into one upload, flushed immediately on a host pause, gated so a save can
+  never overtake `loadData`, and keys outside the namespace are refused in both
+  directions.
 - **Rewarded ads** — one offer, in the garage: coins for a watched ad, on a
   three-minute cooldown that is persisted (so reloading is not a way to skip
   the wait) and clamped (so a corrupt timestamp cannot lock anyone out). Only
