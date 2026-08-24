@@ -3,7 +3,7 @@
 // tilt node carries terrain pitch/roll, drift lean, and the hop.
 // ---------------------------------------------------------------------------
 import * as THREE from 'three';
-import { makeCanvas, canvasTexture } from './util.js';
+import { clamp, makeCanvas, canvasTexture } from './util.js';
 import { makeBlobShadow } from './fx.js';
 import { RoundedBoxGeometry } from './vendor/jsm/geometries/RoundedBoxGeometry.js';
 
@@ -31,6 +31,34 @@ function flameTexture() {
   return canvasTexture(c);
 }
 let _flameTex = null;
+
+// A wheel turning at true road speed passes ~16 revolutions a second, which at
+// 60Hz aliases into a strobe that reads as "spinning backwards slowly". Cap the
+// visual rate: past this everything looks fast anyway, and only the strobe is
+// actually perceptible.
+const MAX_SPIN = 26;          // rad/s of visual wheel rotation
+const BLUR_SPEED = 34;        // road speed where the blurred tyre takes over
+
+// One shared blurred tyre for every kart on track: a soft band that smears the
+// rim highlight instead of letting it flicker.
+let _blurTireMat = null;
+function blurTireMat() {
+  if (_blurTireMat) return _blurTireMat;
+  const c = makeCanvas(32, 32);
+  const g = c.getContext('2d');
+  g.fillStyle = '#1b1b21';
+  g.fillRect(0, 0, 32, 32);
+  const grad = g.createLinearGradient(0, 0, 0, 32);
+  grad.addColorStop(0, 'rgba(120,124,140,0)');
+  grad.addColorStop(0.5, 'rgba(120,124,140,0.34)');
+  grad.addColorStop(1, 'rgba(120,124,140,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 32, 32);
+  _blurTireMat = new THREE.MeshStandardMaterial({
+    map: canvasTexture(c, { repeat: true }), color: 0xffffff, roughness: 0.8,
+  });
+  return _blurTireMat;
+}
 
 export class KartVisual {
   constructor(palette, head = 'human') {
@@ -167,6 +195,11 @@ export class KartVisual {
     this._lean = 0;
     this._steerVis = 0;
     this._spin = 0;
+    this._pitchVis = 0;
+    this._prevSpeed = 0;
+    this._squash = 0;
+    this._wasAir = false;
+    this._blurred = false;
   }
 
   // Character heads sit around (-0.3, 2.05, 0), facing +X.
@@ -257,17 +290,44 @@ export class KartVisual {
     this.group.position.set(r.x, r.groundY + (r.hopZ || 0), r.z);
     this.group.rotation.y = -r.visYaw;
 
-    // terrain pitch/roll + drift lean, smoothed; airborne tricks barrel-roll
-    const targetLean = (r.drift || 0) * 0.13;
+    // terrain pitch/roll + drift lean, smoothed; airborne tricks barrel-roll.
+    // The lean deepens as the mini-turbo charges, so the kart's posture tells
+    // you how close the boost is without looking at the bar.
+    const targetLean = (r.drift || 0) * (0.15 + Math.min(0.11, (r.driftCharge || 0) * 0.07));
     this._lean += (targetLean - this._lean) * Math.min(1, dt * 8);
     const trickRoll = (r.trickT != null && r.trickT >= 0)
       ? Math.min(1, r.trickT / 0.55) * Math.PI * 2 : 0;
-    this.tilt.rotation.z = (r.pitch || 0) + (r.airY > 0 ? -0.12 : 0);
+
+    // weight transfer: the nose dives under braking and lifts under power
+    const accel = dt > 0 ? (r.speed - this._prevSpeed) / dt : 0;
+    this._prevSpeed = r.speed;
+    this._pitchVis += (clamp(accel * 0.0009, -0.055, 0.055) - this._pitchVis) *
+      Math.min(1, dt * 6);
+
+    this.tilt.rotation.z = (r.pitch || 0) + this._pitchVis + (r.airY > 0 ? -0.12 : 0);
     this.tilt.rotation.x = (r.roll || 0) + this._lean + trickRoll;
 
+    // landing squash: springs back over a few frames, so a jump lands with weight
+    const airborne = (r.airY || 0) > 0.05;
+    if (this._wasAir && !airborne) this._squash = 1;
+    this._wasAir = airborne;
+    if (this._squash > 0) {
+      this._squash = Math.max(0, this._squash - dt * 4.5);
+      const sq = Math.sin(this._squash * Math.PI) * 0.2;
+      this.tilt.scale.set(1 + sq * 0.45, 1 - sq, 1 + sq * 0.45);
+    } else if (this.tilt.scale.y !== 1) {
+      this.tilt.scale.set(1, 1, 1);
+    }
+
     // wheels
-    this._spin += (r.speed / 0.7) * dt;
+    this._spin += clamp(r.speed / 0.7, -MAX_SPIN, MAX_SPIN) * dt;
     for (const w of this.wheels) w.rotation.z = -this._spin;
+    const fast = Math.abs(r.speed) > BLUR_SPEED;
+    if (fast !== this._blurred) {
+      this._blurred = fast;
+      const m = fast ? blurTireMat() : this.mats.tire;
+      for (const w of this.wheels) w.material = m;
+    }
     this._steerVis += ((r.steerVis || 0) * 0.42 - this._steerVis) * Math.min(1, dt * 10);
     for (const p of this.steerPivots) p.rotation.y = -this._steerVis;
 

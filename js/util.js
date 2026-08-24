@@ -85,6 +85,11 @@ export function canvasTexture(canvas, { repeat = false, srgb = true, aniso = 0 }
 
 // Merge a list of {geometry, matrix, color} into a single vertex-colored
 // BufferGeometry so a whole forest is one draw call.
+//
+// An optional `ao: {base, height, dark}` bakes occlusion into those vertex
+// colors, darkening toward the object's base. It costs nothing at runtime and
+// is the difference between scenery that sits on the ground and scenery that
+// hovers a few centimetres above it.
 export function mergeParts(parts) {
   const pos = [], nor = [], col = [], idx = [];
   let off = 0;
@@ -93,10 +98,19 @@ export function mergeParts(parts) {
     const g = p.geometry.clone().applyMatrix4(p.matrix);
     const gp = g.attributes.position, gn = g.attributes.normal;
     c.set(p.color);
+    const ao = p.ao;
+    const aoDark = ao ? (ao.dark == null ? 0.55 : ao.dark) : 1;
+    const aoH = ao ? Math.max(0.001, ao.height) : 1;
     for (let i = 0; i < gp.count; i++) {
-      pos.push(gp.getX(i), gp.getY(i), gp.getZ(i));
+      const y = gp.getY(i);
+      pos.push(gp.getX(i), y, gp.getZ(i));
       nor.push(gn.getX(i), gn.getY(i), gn.getZ(i));
-      col.push(c.r, c.g, c.b);
+      if (ao) {
+        const k = aoDark + (1 - aoDark) * clamp((y - ao.base) / aoH, 0, 1);
+        col.push(c.r * k, c.g * k, c.b * k);
+      } else {
+        col.push(c.r, c.g, c.b);
+      }
     }
     const gi = g.index;
     if (gi) for (let i = 0; i < gi.count; i++) idx.push(gi.getX(i) + off);

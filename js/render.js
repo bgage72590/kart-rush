@@ -14,14 +14,25 @@ import { OutputPass } from './vendor/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from './vendor/jsm/postprocessing/ShaderPass.js';
 import { RoomEnvironment } from './vendor/jsm/environments/RoomEnvironment.js';
 
-// Final grade: a touch of saturation + contrast, and a soft vignette so the
-// centre of the screen reads brighter than the corners.
+// Final grade: saturation, contrast and a vignette — plus the game's screen
+// effects, which live here rather than in passes of their own. This pass
+// already runs on every pixel, so folding boost, impact, final-lap and heat
+// haze into it costs a handful of ALU ops instead of another full-screen pass.
+//
+// The extra texture taps sit behind `if (uniform > 0.0)`. A branch on a uniform
+// is coherent across the whole draw — every fragment takes the same side — so
+// the cost is only paid while the effect is actually on screen.
 const GradeShader = {
   uniforms: {
     tDiffuse: { value: null },
     saturation: { value: 1.14 },
     contrast: { value: 1.06 },
     vignette: { value: 0.28 },
+    boost: { value: 0 },        // 0..1, speed smear + tunnel vignette
+    punch: { value: 0 },        // 0..1, impact flash
+    rush: { value: 0 },         // 0..1, final-lap colour push
+    shimmer: { value: 0 },      // 0..1, heat haze (lava tracks)
+    time: { value: 0 },
   },
   vertexShader: /* glsl */`
     varying vec2 vUv;
@@ -34,14 +45,47 @@ const GradeShader = {
     uniform float saturation;
     uniform float contrast;
     uniform float vignette;
+    uniform float boost;
+    uniform float punch;
+    uniform float rush;
+    uniform float shimmer;
+    uniform float time;
     varying vec2 vUv;
+
     void main() {
-      vec4 c = texture2D(tDiffuse, vUv);
+      vec2 uv = vUv;
+      vec2 d = uv - 0.5;
+
+      // heat rising off the ground: strongest along the bottom of the frame
+      if (shimmer > 0.0) {
+        float band = smoothstep(0.5, 0.0, uv.y);
+        uv.x += sin(uv.y * 64.0 + time * 4.5) * 0.0022 * shimmer * band;
+        uv.y += cos(uv.x * 48.0 + time * 3.1) * 0.0011 * shimmer * band;
+      }
+
+      vec4 c;
+      if (boost > 0.0) {
+        // pull the channels apart along the radius: reads as speed without
+        // the cost of a real radial blur
+        float amt = boost * 0.007;
+        c.r = texture2D(tDiffuse, uv - d * amt).r;
+        c.g = texture2D(tDiffuse, uv).g;
+        c.b = texture2D(tDiffuse, uv + d * amt).b;
+        c.a = 1.0;
+      } else {
+        c = texture2D(tDiffuse, uv);
+      }
+
       float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
-      c.rgb = mix(vec3(l), c.rgb, saturation);
-      c.rgb = (c.rgb - 0.5) * contrast + 0.5;
-      vec2 d = vUv - 0.5;
-      c.rgb *= 1.0 - vignette * dot(d, d) * 1.6;
+      float sat = saturation + rush * 0.18 - punch * 0.55;
+      c.rgb = mix(vec3(l), c.rgb, max(sat, 0.0));
+      c.rgb = (c.rgb - 0.5) * (contrast + rush * 0.06) + 0.5;
+      c.rgb += punch * 0.30;
+
+      // the vignette closes in while boosting, so speed feels like a tunnel
+      float vig = vignette + boost * 0.55;
+      c.rgb *= 1.0 - vig * dot(d, d) * 1.6;
+
       gl_FragColor = vec4(clamp(c.rgb, 0.0, 1.0), c.a);
     }`,
 };
@@ -106,6 +150,7 @@ export class Renderer {
     this.composer = composer;
     this.bloom = bloom;
     this.grade = grade;
+    this.fx = grade.uniforms;
     this.scene = scene;
     this.camera = camera;
   }

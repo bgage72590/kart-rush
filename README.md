@@ -104,6 +104,42 @@ through `js/playables.js` is guarded.
 - **Ads** — the call sites exist and are guarded, but nothing calls them.
   Revenue sharing is an invite-only pilot.
 
+## Look
+
+Everything below is either baked once when a track is built, or folded into a
+pass that was already running. The renderer is fill-rate bound, so per-pixel
+work is the expensive kind and geometry and vertex colours are nearly free.
+
+Baked at build time, free every frame after that:
+
+- a painted 512x512 sky with themed cloud banks and a horizon glow, in place of
+  the 4px gradient that used to be stretched around the dome
+- ambient occlusion in the scenery's vertex colours, so trees and pylons sit on
+  the ground instead of hovering
+- distance haze in those same vertex colours — the depth cue camera-distance
+  fog cannot give
+- a polished racing line, edge grit and patch repairs in the road texture
+- roadside dirt that fades out into clean grass, read off the heightfield's own
+  splat weights
+- kerbs that run hotter through the tight corners
+- guard rails on the corners, flag poles around the lap, and pockets of crowd —
+  all merged into one extra draw call
+
+Folded into the existing grade pass, which already touches every pixel:
+
+- a speed smear and closing vignette while boosting
+- a flash on impact
+- a colour push on the final lap, to match the music already speeding up
+- heat haze on the lava tracks
+
+The extra texture taps sit behind `if (uniform > 0.0)`. A branch on a uniform is
+coherent across the whole draw, so that cost is only paid while the effect is on
+screen.
+
+And in motion: karts lean harder as the mini-turbo charges, dip their nose under
+braking, and squash on landing. Wheel spin is capped below the rate that aliases
+into a backwards-strobe at 60Hz, with a blurred tyre above it.
+
 ## Performance
 
 Render resolution adapts: touch devices start at 1.5x device pixels instead of

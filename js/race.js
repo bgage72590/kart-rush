@@ -1401,6 +1401,24 @@ export function syncVisuals(dt, time) {
     }
   }
 
+  // Pickups catch a slow travelling highlight. These materials are shared by
+  // every coin and every box, so the whole effect is three property writes.
+  if (track.shine) {
+    const pulse = 0.5 + 0.5 * Math.sin(time * 2.4);
+    if (track.shine.coin) track.shine.coin.emissiveIntensity = 0.55 + pulse * 1.0;
+    if (track.shine.edge) track.shine.edge.opacity = 0.7 + pulse * 0.3;
+    if (track.shine.box) track.shine.box.opacity = 0.32 + pulse * 0.16;
+  }
+
+  // Pickups catch a slow travelling highlight. These materials are shared by
+  // every coin and every box, so the whole effect is three property writes.
+  if (track.shine) {
+    const pulse = 0.5 + 0.5 * Math.sin(time * 2.4);
+    if (track.shine.coin) track.shine.coin.emissiveIntensity = 0.55 + pulse * 1.0;
+    if (track.shine.edge) track.shine.edge.opacity = 0.7 + pulse * 0.3;
+    if (track.shine.box) track.shine.box.opacity = 0.32 + pulse * 0.16;
+  }
+
   // item boxes
   for (const box of track.itemBoxes) {
     if (box.cooldown > 0) {

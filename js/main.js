@@ -284,6 +284,42 @@ function exitPodium() {
   quitToMenu();
 }
 
+// --- screen effects ---------------------------------------------------------
+// All of these ride the grade pass that already runs, so they cost uniforms
+// rather than draw calls. Every value is eased: a screen effect that snaps on
+// reads as a glitch, not as force.
+const fxState = { boost: 0, punch: 0, rush: 0, shimmer: 0 };
+
+function updateScreenFx(dt, time) {
+  const u = rig.fx;
+  if (!u) return;
+  const p = G.racers[0];
+  const racing = G.state === 'RACE' || G.state === 'COUNTDOWN' || G.state === 'RESULTS';
+
+  // boost: rises fast so the kick lands, falls slowly so it does not flicker
+  // as short boosts overlap
+  const wantBoost = (racing && p && p.boost > 0) ? 1 : 0;
+  fxState.boost += (wantBoost - fxState.boost) * Math.min(1, dt * (wantBoost ? 14 : 4));
+
+  // impact: camera shake is already the game's "you got hit" signal, and it
+  // decays on its own. Bumps sit below the threshold; shells and geysers clear it.
+  const wantPunch = racing ? clamp((G.cam.shake - 0.5) / 0.9, 0, 1) : 0;
+  fxState.punch += (wantPunch - fxState.punch) * Math.min(1, dt * (wantPunch > fxState.punch ? 26 : 9));
+
+  // final lap: the music already speeds up, so let the picture agree
+  const wantRush = (racing && Sound.music.rush && p && !p.finished) ? 1 : 0;
+  fxState.rush += (wantRush - fxState.rush) * Math.min(1, dt * 2);
+
+  const wantShimmer = (racing && G.track && G.track.def.hazard === 'lava') ? 1 : 0;
+  fxState.shimmer += (wantShimmer - fxState.shimmer) * Math.min(1, dt * 3);
+
+  u.boost.value = fxState.boost < 0.004 ? 0 : fxState.boost;
+  u.punch.value = fxState.punch < 0.004 ? 0 : fxState.punch;
+  u.rush.value = fxState.rush;
+  u.shimmer.value = fxState.shimmer < 0.004 ? 0 : fxState.shimmer;
+  u.time.value = time;
+}
+
 // --- camera -----------------------------------------------------------------
 
 let camLat = 0;      // lateral drift offset, smoothed
@@ -855,6 +891,8 @@ function frame(now) {
       break;
     }
   }
+
+  updateScreenFx(dt, time);
 
   if (rotateHintTimer > 0) {
     rotateHintTimer -= dt;

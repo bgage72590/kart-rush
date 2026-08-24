@@ -126,6 +126,21 @@ export function buildTrackFromDef(def, key) {
     }
   }
 
+  // How close a world point is to the road, 0..1 — read straight off the
+  // gaussian splat weights the heightfield already built, so it costs one
+  // bilinear sample rather than a search through the centreline.
+  function nearRoad(x, z) {
+    if (x < -E || x > E || z < -E || z > E) return 0;
+    const fx = (x + E) / cell, fz = (z + E) / cell;
+    const ix = clamp(Math.floor(fx), 0, GN - 2);
+    const iz = clamp(Math.floor(fz), 0, GN - 2);
+    const ax = fx - ix, az = fz - iz;
+    const d = lerp(
+      lerp(den[iz * GN + ix], den[iz * GN + ix + 1], ax),
+      lerp(den[(iz + 1) * GN + ix], den[(iz + 1) * GN + ix + 1], ax), az);
+    return d / (d + 0.06);
+  }
+
   function heightAt(x, z) {
     if (x < -E || x > E || z < -E || z > E) return noiseAt(x, z);
     const fx = (x + E) / cell, fz = (z + E) / cell;
@@ -151,6 +166,8 @@ export function buildTrackFromDef(def, key) {
     const pos = geo.attributes.position;
     const col = new Float32Array(pos.count * 3);
     const cA = new THREE.Color(T.grassA), cB = new THREE.Color(T.grassB);
+    // scuffed dirt right at the roadside, fading out to clean ground
+    const dust = new THREE.Color(T.grassB).lerp(new THREE.Color(T.road), 0.45);
     const cc = new THREE.Color();
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i), z = pos.getZ(i);
@@ -158,6 +175,8 @@ export function buildTrackFromDef(def, key) {
       const n = (Math.sin(x * 12.9898 + z * 78.233) * 43758.5453) % 1;
       const t = Math.abs(n);
       cc.copy(cA).lerp(cB, t);
+      const w = nearRoad(x, z);
+      if (w > 0.1) cc.lerp(dust, clamp((w - 0.1) / 0.55, 0, 1) * 0.6);
       col[i * 3] = cc.r; col[i * 3 + 1] = cc.g; col[i * 3 + 2] = cc.b;
     }
     geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
@@ -173,8 +192,8 @@ export function buildTrackFromDef(def, key) {
 
   // Build a ribbon along [i0..i1] (inclusive, wrapping) between lateral offsets
   // offA→offB. yA/yB are added to the terrain centreline height.
-  function buildRibbon(i0, i1, offA, offB, yA, yB, vScale) {
-    const pos = [], uv = [], idx = [];
+  function buildRibbon(i0, i1, offA, offB, yA, yB, vScale, colorFn) {
+    const pos = [], uv = [], idx = [], col = colorFn ? [] : null;
     const count = ((i1 - i0 + N) % N) + 1;
     // full loops: quantise the repeat so the texture phase matches at the seam
     if (count === N) vScale = length / Math.max(1, Math.round(length / vScale));
@@ -188,6 +207,10 @@ export function buildTrackFromDef(def, key) {
       );
       const v = (k === count && i === i0 ? length : s.cum - samples[i0].cum + (k > 0 && s.cum < samples[i0].cum ? length : 0)) / vScale;
       uv.push(0, v, 1, v);
+      if (col) {
+        const c = colorFn(s);
+        col.push(c[0], c[1], c[2], c[0], c[1], c[2]);
+      }
     }
     for (let k = 0; k < count; k++) {
       const a = k * 2;
@@ -196,6 +219,7 @@ export function buildTrackFromDef(def, key) {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    if (col) geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
     geo.setIndex(idx);
     geo.computeVertexNormals();
     return geo;
@@ -214,6 +238,30 @@ export function buildTrackFromDef(def, key) {
       g.fillStyle = rr() < 0.5 ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.09)';
       g.fillRect(rr() * 128, rr() * 128, 1 + rr() * 2, 1 + rr() * 2);
     }
+
+    // Wear, under the markings so those stay crisp. U runs across the road, so
+    // this is a polished band where karts actually drive, grit at the edges,
+    // and a few patch repairs.
+    const lane = g.createLinearGradient(0, 0, 128, 0);
+    lane.addColorStop(0.00, 'rgba(0,0,0,0)');
+    lane.addColorStop(0.22, 'rgba(0,0,0,0.10)');
+    lane.addColorStop(0.50, 'rgba(0,0,0,0.13)');
+    lane.addColorStop(0.78, 'rgba(0,0,0,0.10)');
+    lane.addColorStop(1.00, 'rgba(0,0,0,0)');
+    g.fillStyle = lane;
+    g.fillRect(0, 0, 128, 128);
+    const grit = g.createLinearGradient(0, 0, 128, 0);
+    grit.addColorStop(0.00, 'rgba(200,190,170,0.16)');
+    grit.addColorStop(0.14, 'rgba(200,190,170,0)');
+    grit.addColorStop(0.86, 'rgba(200,190,170,0)');
+    grit.addColorStop(1.00, 'rgba(200,190,170,0.16)');
+    g.fillStyle = grit;
+    g.fillRect(0, 0, 128, 128);
+    for (let i = 0; i < 5; i++) {
+      g.fillStyle = rr() < 0.5 ? 'rgba(255,255,255,0.045)' : 'rgba(0,0,0,0.07)';
+      g.fillRect(rr() * 100, rr() * 100, 14 + rr() * 26, 10 + rr() * 22);
+    }
+
     g.fillStyle = 'rgba(245,245,250,0.85)';
     g.fillRect(2, 0, 5, 128);
     g.fillRect(121, 0, 5, 128);
@@ -236,10 +284,15 @@ export function buildTrackFromDef(def, key) {
     g.fillStyle = '#e23c34'; g.fillRect(0, 0, 16, 32);
     g.fillStyle = '#f2f2f4'; g.fillRect(0, 32, 16, 32);
     const tex = canvasTexture(c, { repeat: true });
-    const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.55 });
+    const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.55, vertexColors: true });
+    // tight corners get hotter, more worn kerbs — the places karts actually clip
+    const kerbTint = (sm) => {
+      const k = clamp(sm.curve * 6, 0, 1);
+      return [1, 1 - k * 0.22, 1 - k * 0.38];
+    };
     for (const g2 of [
-      buildRibbon(0, N - 1, halfW, halfW + kerbW, LIFT, 0.04, 5.6),
-      buildRibbon(0, N - 1, -halfW - kerbW, -halfW, 0.04, LIFT, 5.6),
+      buildRibbon(0, N - 1, halfW, halfW + kerbW, LIFT, 0.04, 5.6, kerbTint),
+      buildRibbon(0, N - 1, -halfW - kerbW, -halfW, 0.04, LIFT, 5.6, kerbTint),
     ]) {
       const m = new THREE.Mesh(g2, mat);
       m.receiveShadow = true;
@@ -478,6 +531,11 @@ export function buildTrackFromDef(def, key) {
 
   // --- item boxes ----------------------------------------------------------------
 
+  // Materials the game layer pulses each frame so pickups read as pickups.
+  // They are shared across every instance, so this is a couple of property
+  // writes per frame rather than any per-object work.
+  const shine = {};
+
   const itemBoxes = [];
   {
     const qc = makeCanvas(64, 64);
@@ -497,6 +555,8 @@ export function buildTrackFromDef(def, key) {
       color: 0x9fe0ff, transparent: true, opacity: 0.4, depthWrite: false,
     });
     const edgeMat = new THREE.LineBasicMaterial({ color: 0xf4ffff, transparent: true, opacity: 1 });
+    shine.box = boxMat;
+    shine.edge = edgeMat;
     for (const frac of [0.16, 0.38, 0.62, 0.84]) {
       const i = Math.floor(frac * N);
       const s = samples[i];
@@ -530,6 +590,7 @@ export function buildTrackFromDef(def, key) {
     const coinMat = new THREE.MeshStandardMaterial({
       color: 0xffd94d, metalness: 0.65, roughness: 0.25, emissive: 0x5a4400,
     });
+    shine.coin = coinMat;
     for (const [gi, frac] of [0.07, 0.26, 0.47, 0.56, 0.71, 0.93].entries()) {
       const base = Math.floor(frac * N);
       const lat = [-0.45, 0.45, 0, -0.45, 0.45, 0][gi] * halfW;
@@ -560,6 +621,12 @@ export function buildTrackFromDef(def, key) {
     const pyStrip = new THREE.BoxGeometry(0.22, 9.5, 0.12);
     const ringGeo = new THREE.TorusGeometry(1.7, 0.13, 8, 20);
 
+    const fogCol = new THREE.Color(T.fog);
+    // Distance haze baked into the vertex colours. Scene fog already handles
+    // camera distance; this adds the depth cue fog cannot, because it varies
+    // with how far a thing sits from the track rather than from the camera.
+    const hazed = (base, haze) => new THREE.Color(base).lerp(fogCol, haze);
+
     for (let i = 0; i < N; i += 8) {
       for (const side of [-1, 1]) {
         if (rng() < 0.35) continue;
@@ -567,44 +634,48 @@ export function buildTrackFromDef(def, key) {
         const off = halfW + kerbW + 7 + rng() * 60;
         const x = s.x + (-s.tz) * side * off;
         const z = s.z + s.tx * side * off;
-        if (minRoadDistLite(x, z) < halfW + kerbW + 4) continue;
+        const roadDist = minRoadDistLite(x, z);
+        if (roadDist < halfW + kerbW + 4) continue;
         const y = heightAt(x, z);
         const sc = 0.9 + rng() * 0.8;
+        const haze = clamp((roadDist - 60) / 240, 0, 1) * 0.4;
+        const ao = { base: y, height: 5.5 * sc, dark: 0.5 };
 
         if (def.deco === 'pine') {
           const g1 = 0.16 + rng() * 0.1;
-          parts.push({ geometry: trunkGeo, matrix: mat4(x, y + 1.5 * sc, z, 0, sc), color: 0x6b4a2b });
-          parts.push({ geometry: cone1, matrix: mat4(x, y + 5.0 * sc, z, rng() * TAU, sc), color: new THREE.Color(0.13, 0.32 + g1, 0.16) });
-          parts.push({ geometry: cone2, matrix: mat4(x, y + 7.7 * sc, z, rng() * TAU, sc), color: new THREE.Color(0.16, 0.38 + g1, 0.19) });
+          parts.push({ geometry: trunkGeo, matrix: mat4(x, y + 1.5 * sc, z, 0, sc), color: hazed(0x6b4a2b, haze), ao });
+          parts.push({ geometry: cone1, matrix: mat4(x, y + 5.0 * sc, z, rng() * TAU, sc), color: hazed(new THREE.Color(0.13, 0.32 + g1, 0.16), haze), ao });
+          parts.push({ geometry: cone2, matrix: mat4(x, y + 7.7 * sc, z, rng() * TAU, sc), color: hazed(new THREE.Color(0.16, 0.38 + g1, 0.19), haze), ao });
         } else if (def.deco === 'snowpine') {
           const wt = 0.9 + rng() * 0.08;
-          parts.push({ geometry: trunkGeo, matrix: mat4(x, y + 1.5 * sc, z, 0, sc), color: 0x5a4433 });
-          parts.push({ geometry: cone1, matrix: mat4(x, y + 5.0 * sc, z, rng() * TAU, sc), color: new THREE.Color(0.3, 0.42, 0.38) });
-          parts.push({ geometry: cone2, matrix: mat4(x, y + 7.7 * sc, z, rng() * TAU, sc), color: new THREE.Color(wt, wt + 0.03, 1) });
+          parts.push({ geometry: trunkGeo, matrix: mat4(x, y + 1.5 * sc, z, 0, sc), color: hazed(0x5a4433, haze), ao });
+          parts.push({ geometry: cone1, matrix: mat4(x, y + 5.0 * sc, z, rng() * TAU, sc), color: hazed(new THREE.Color(0.3, 0.42, 0.38), haze), ao });
+          parts.push({ geometry: cone2, matrix: mat4(x, y + 7.7 * sc, z, rng() * TAU, sc), color: hazed(new THREE.Color(wt, wt + 0.03, 1), haze), ao });
         } else if (def.deco === 'spire') {
           const rock = new THREE.Color(0.14 + rng() * 0.05, 0.09, 0.1);
-          parts.push({ geometry: cone1, matrix: mat4(x, y + 4.4 * sc, z, rng() * TAU, sc * 1.5, (rng() - 0.5) * 0.24), color: rock });
-          parts.push({ geometry: cone2, matrix: mat4(x + 2.2 * sc, y + 2.6 * sc, z + 1.2 * sc, rng() * TAU, sc, (rng() - 0.5) * 0.3), color: rock });
+          parts.push({ geometry: cone1, matrix: mat4(x, y + 4.4 * sc, z, rng() * TAU, sc * 1.5, (rng() - 0.5) * 0.24), color: hazed(rock, haze), ao });
+          parts.push({ geometry: cone2, matrix: mat4(x + 2.2 * sc, y + 2.6 * sc, z + 1.2 * sc, rng() * TAU, sc, (rng() - 0.5) * 0.3), color: hazed(rock, haze), ao });
           if (rng() < 0.45) {
             glowParts.push({ geometry: pyStrip, matrix: mat4(x, y + 2.6 * sc, z, rng() * TAU, sc * 0.55), color: 0xff5a18 });
           }
         } else if (def.deco === 'palm') {
           const tiltZ = (rng() - 0.5) * 0.3;
-          parts.push({ geometry: palmTrunk, matrix: mat4(x, y + 3.7 * sc, z, rng() * TAU, sc, tiltZ), color: 0x8a6136 });
+          parts.push({ geometry: palmTrunk, matrix: mat4(x, y + 3.7 * sc, z, rng() * TAU, sc, tiltZ), color: hazed(0x8a6136, haze), ao });
           const hx = x - Math.sin(tiltZ) * 7 * sc * 0.5, hy = y + 7.3 * sc;
           for (let L = 0; L < 6; L++) {
             const a = (L / 6) * TAU + rng() * 0.4;
             parts.push({
               geometry: leafGeo,
               matrix: mat4(hx + Math.cos(a) * 1.5 * sc, hy, z + Math.sin(a) * 1.5 * sc, -a, sc, -0.4),
-              color: new THREE.Color(0.16, 0.5 + rng() * 0.14, 0.24),
+              color: hazed(new THREE.Color(0.16, 0.5 + rng() * 0.14, 0.24), haze),
+              ao,
             });
           }
-          parts.push({ geometry: cocoGeo, matrix: mat4(hx + 0.4, hy - 0.5, z, 0, sc), color: 0xc8892f });
+          parts.push({ geometry: cocoGeo, matrix: mat4(hx + 0.4, hy - 0.5, z, 0, sc), color: hazed(0xc8892f, haze), ao });
         } else {
           // neon pylon
-          parts.push({ geometry: pyBase, matrix: mat4(x, y + 5.25 * sc, z, rng() * 0.6, sc), color: 0x171730 });
-          parts.push({ geometry: pyCap, matrix: mat4(x, y + 10.6 * sc, z, rng() * 0.6, sc), color: 0x20204a });
+          parts.push({ geometry: pyBase, matrix: mat4(x, y + 5.25 * sc, z, rng() * 0.6, sc), color: hazed(0x171730, haze), ao });
+          parts.push({ geometry: pyCap, matrix: mat4(x, y + 10.6 * sc, z, rng() * 0.6, sc), color: hazed(0x20204a, haze), ao });
           const neon = rng() < 0.5 ? 0x18e0ff : 0xff4fd8;
           glowParts.push({ geometry: pyStrip, matrix: mat4(x + 0.82 * sc, y + 5.25 * sc, z, 0, sc), color: neon });
           glowParts.push({ geometry: pyStrip, matrix: mat4(x - 0.82 * sc, y + 5.25 * sc, z, 0, sc), color: neon });
@@ -627,6 +698,102 @@ export function buildTrackFromDef(def, key) {
       const mesh = new THREE.Mesh(mergeParts(glowParts), new THREE.MeshBasicMaterial({
         vertexColors: true,
       }));
+      group.add(mesh);
+    }
+  }
+
+  // --- trackside dressing ------------------------------------------------------
+  // Guard rails on the corners (where run-off actually matters, and where the
+  // track otherwise reads as empty), flag poles at intervals, and pockets of
+  // crowd. All merged into one mesh: one extra draw call for the whole lot.
+  {
+    const parts = [];
+    const drng = mulberry32(def.seed ^ 0xd3c0);
+    const railGeo = new THREE.BoxGeometry(6.2, 1.05, 0.45);
+    const postGeo = new THREE.BoxGeometry(0.3, 1.5, 0.3);
+    const poleGeo = new THREE.CylinderGeometry(0.14, 0.18, 7.5, 6);
+    const flagGeo = new THREE.BoxGeometry(2.5, 1.5, 0.09);
+    const headGeo = new THREE.SphereGeometry(0.4, 6, 5);
+    const bodyGeo = new THREE.CylinderGeometry(0.34, 0.4, 1.1, 6);
+    const railCol = new THREE.Color(0xdfe3ec);
+    const railWarn = new THREE.Color(0xe23c34);
+
+    const lateral = (sm, lat) => [sm.x + (-sm.tz) * lat, sm.z + sm.tx * lat];
+    const railLat = halfW + kerbW + 1.5;
+
+    // guard rails hug the corners
+    for (let i = 0; i < N; i += 2) {
+      const sm = samples[i];
+      if (sm.curve < 0.05) continue;
+      const yaw = -Math.atan2(sm.tz, sm.tx);
+      for (const side of [-1, 1]) {
+        const [bx, bz] = lateral(sm, side * railLat);
+        const by = sm.y + LIFT;
+        const alt = (i >> 1) % 2 === 0;
+        parts.push({
+          geometry: railGeo, matrix: mat4(bx, by + 1.0, bz, yaw),
+          color: alt ? railCol : railWarn,
+          ao: { base: by, height: 1.6, dark: 0.45 },
+        });
+        parts.push({
+          geometry: postGeo, matrix: mat4(bx, by + 0.75, bz, yaw),
+          color: 0x6b7280, ao: { base: by, height: 1.6, dark: 0.4 },
+        });
+      }
+    }
+
+    // flag poles, evenly spaced right around the lap
+    const flagEvery = Math.max(8, Math.floor(N / 16));
+    for (let i = 0; i < N; i += flagEvery) {
+      const sm = samples[i];
+      const yaw = -Math.atan2(sm.tz, sm.tx);
+      const side = (i / flagEvery) % 2 === 0 ? 1 : -1;
+      const [px, pz] = lateral(sm, side * (railLat + 3.2));
+      const py = heightAt(px, pz);
+      const hue = drng();
+      parts.push({
+        geometry: poleGeo, matrix: mat4(px, py + 3.75, pz, 0),
+        color: 0xb9bfcc, ao: { base: py, height: 5, dark: 0.5 },
+      });
+      parts.push({
+        geometry: flagGeo,
+        matrix: mat4(px + 1.25 * -Math.sin(yaw), py + 6.4, pz + 1.25 * Math.cos(yaw), yaw + Math.PI / 2),
+        color: new THREE.Color().setHSL(hue, 0.85, 0.55),
+      });
+    }
+
+    // pockets of crowd behind the rails, thickest near the start line
+    const stands = [0.02, 0.2, 0.44, 0.63, 0.85];
+    for (const frac of stands) {
+      const base = Math.floor(frac * N);
+      const side = drng() < 0.5 ? 1 : -1;
+      for (let row = 0; row < 3; row++) {
+        for (let k = 0; k < 7; k++) {
+          const sm = samples[(base + k * 2) % N];
+          const lat = side * (railLat + 3 + row * 1.6);
+          const [cx2, cz2] = lateral(sm, lat);
+          const cy = heightAt(cx2, cz2) + row * 0.55;
+          if (minRoadDistLite(cx2, cz2) < halfW + kerbW) continue;
+          const shirt = new THREE.Color().setHSL(drng(), 0.7, 0.45 + drng() * 0.2);
+          const bob = drng() * 0.25;
+          parts.push({
+            geometry: bodyGeo, matrix: mat4(cx2, cy + 0.55 + bob, cz2, drng() * TAU),
+            color: shirt, ao: { base: cy, height: 1.4, dark: 0.45 },
+          });
+          parts.push({
+            geometry: headGeo, matrix: mat4(cx2, cy + 1.35 + bob, cz2, 0),
+            color: new THREE.Color().setHSL(0.08, 0.35, 0.55 + drng() * 0.25),
+          });
+        }
+      }
+    }
+
+    if (parts.length) {
+      const mesh = new THREE.Mesh(mergeParts(parts), new THREE.MeshStandardMaterial({
+        vertexColors: true, roughness: 0.8,
+      }));
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
       group.add(mesh);
     }
   }
@@ -656,20 +823,74 @@ export function buildTrackFromDef(def, key) {
   // --- sky, sun, lights ---------------------------------------------------------
 
   {
-    const c = makeCanvas(4, 512);
+    // The sky was a 4px-wide gradient stretched around the whole dome. It is
+    // now a real 512x512 painting: same one draw call, same one upload, drawn
+    // once when the track is built — clouds cost nothing per frame.
+    const SKY = 512;
+    const c = makeCanvas(SKY, SKY);
     const g = c.getContext('2d');
-    const grad = g.createLinearGradient(0, 0, 0, 512);
+    const grad = g.createLinearGradient(0, 0, 0, SKY);
     grad.addColorStop(0, T.skyTop);
     grad.addColorStop(0.42, T.skyMid);
     grad.addColorStop(0.52, T.horizon);
     grad.addColorStop(0.56, T.fog);
     grad.addColorStop(1, T.fog);
     g.fillStyle = grad;
-    g.fillRect(0, 0, 4, 512);
+    g.fillRect(0, 0, SKY, SKY);
+
+    const srng = mulberry32(def.seed ^ 0x5c10);
+    const hz = new THREE.Color(T.horizon);
+    const rgb = (col, a) => 'rgba(' + Math.round(col.r * 255) + ',' + Math.round(col.g * 255) +
+      ',' + Math.round(col.b * 255) + ',' + a + ')';
+
+    // a warm lift just above the horizon, where the light actually comes from
+    const glowBand = g.createLinearGradient(0, SKY * 0.30, 0, SKY * 0.53);
+    glowBand.addColorStop(0, rgb(hz, 0));
+    glowBand.addColorStop(1, rgb(hz, 0.5));
+    g.fillStyle = glowBand;
+    g.fillRect(0, SKY * 0.30, SKY, SKY * 0.23);
+
+    // Clouds, lit from the horizon colour so they belong to their theme. Each
+    // is drawn three times so nothing seams where the texture wraps.
+    const cloudCol = hz.clone().lerp(new THREE.Color(0xffffff), T.stars ? 0.1 : 0.55);
+    const puff = (cx, cy, rw, rh, a) => {
+      for (const off of [-SKY, 0, SKY]) {
+        g.save();
+        g.translate(cx + off, cy);
+        g.scale(1, rh / rw);
+        const rad = g.createRadialGradient(0, 0, 0, 0, 0, rw);
+        rad.addColorStop(0, rgb(cloudCol, a));
+        rad.addColorStop(0.5, rgb(cloudCol, a * 0.5));
+        rad.addColorStop(1, rgb(cloudCol, 0));
+        g.fillStyle = rad;
+        g.beginPath();
+        g.arc(0, 0, rw, 0, TAU);
+        g.fill();
+        g.restore();
+      }
+    };
+    const bankCount = T.stars ? 5 : 13;
+    for (let i = 0; i < bankCount; i++) {
+      // lower banks are smaller and fainter: cheap aerial perspective in the sky
+      const t = srng();
+      const cy = SKY * (0.10 + t * 0.34);
+      const near = 1 - t;
+      const cx = srng() * SKY;
+      const rw = SKY * (0.05 + near * 0.09);
+      const a = (T.stars ? 0.12 : 0.3) * (0.45 + near * 0.55);
+      const lobes = 3 + Math.floor(srng() * 3);
+      for (let k = 0; k < lobes; k++) {
+        puff(cx + (k - lobes / 2) * rw * 0.85 + (srng() - 0.5) * rw * 0.5,
+             cy + (srng() - 0.5) * rw * 0.28,
+             rw * (0.6 + srng() * 0.6), rw * (0.26 + srng() * 0.2), a);
+      }
+    }
+
+    const skyTex = canvasTexture(c, { repeat: true });
     const dome = new THREE.Mesh(
-      new THREE.SphereGeometry(1650, 24, 16),
+      new THREE.SphereGeometry(1650, 32, 20),
       new THREE.MeshBasicMaterial({
-        map: canvasTexture(c), side: THREE.BackSide, fog: false, depthWrite: false,
+        map: skyTex, side: THREE.BackSide, fog: false, depthWrite: false,
       })
     );
     dome.renderOrder = -10;
@@ -800,7 +1021,7 @@ export function buildTrackFromDef(def, key) {
     def, theme: T, key, laps: def.laps,
     group, samples, N, length, wps,
     heightAt, query,
-    itemBoxes, boostPads, ramps, coins, gateLamps,
+    itemBoxes, boostPads, ramps, coins, gateLamps, shine,
     lavaPools, geysers, icePatches, snowmen,
     minimap, worldToMap,
     halfW, kerbW,
