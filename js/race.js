@@ -307,7 +307,7 @@ function makeRacer(id, charIdx, isPlayer, track, gridSlot) {
     drift: 0, driftCharge: 0, hop: 0, driftReady: false, hopZ: 0,
     spin: 0, boost: 0, star: 0, respawn: 0, boostPadCd: 0, forceRescue: 0,
     shield: false, slip: 0, stall: 0, onIce: false,
-    airY: 0, airV: 0, tricked: false, trickT: -1, trickDur: CFG.trickSpin, prevAirDrift: false,
+    airY: 0, airV: 0, airW: 0, tricked: false, trickT: -1, trickDur: CFG.trickSpin, prevAirDrift: false,
     grapple: null,
     item: null, itemRoll: 0, rollIcon: 0, pendingItem: null,
     lap: 1, wpIdx: 0, progress: 0, place: gridSlot + 1, rank: 0,
@@ -843,10 +843,17 @@ function driveRacer(r, c, dt) {
     }
   }
 
-  // airborne: ballistic arc, no steering
+  // Airborne: a ballistic arc in world space, no steering.
+  //
+  // `airW` is the kart's world height and is what gravity acts on; `airY` is
+  // derived from it as height above whatever ground is currently underneath.
+  // Flying the arc in world space is what makes a jump over falling ground work
+  // — measured from the launch height instead, `airY` goes negative on the way
+  // down into a dip, the kart drops out of this branch while still in the air,
+  // and it snaps to the ground mid-flight.
   if (r.airY > 0 || r.airV > 0) {
     r.airV -= T.gravity * dt;
-    r.airY += r.airV * dt;
+    r.airW += r.airV * dt;
     if (c.drift && !r.prevAirDrift && !r.tricked && r.airY > 0.4) {
       r.tricked = true;
       r.trickT = 0;
@@ -855,7 +862,16 @@ function driveRacer(r, c, dt) {
     }
     r.prevAirDrift = c.drift;
     if (r.trickT >= 0) r.trickT += dt;
+
+    // Where the arc would carry us, and what is under it there.
+    const ax = r.x + Math.cos(r.angle) * r.speed * dt;
+    const az = r.z + Math.sin(r.angle) * r.speed * dt;
+    const qa = track.query(ax, az, r.sHint);
+    r.airY = r.airW - qa.groundY;
+
     if (r.airY <= 0 && r.airV <= 0) {
+      // Touchdown is where the arc meets the ground, so the kart never snaps
+      // onto it. The ground path below does the move and the query.
       r.airY = 0; r.airV = 0;
       if (r.tricked) {
         r.boost = Math.max(r.boost, 0.95);
@@ -865,10 +881,10 @@ function driveRacer(r, c, dt) {
       r.trickT = -1;
     } else {
       // fly straight; keep momentum, skip ground handling
-      r.x += Math.cos(r.angle) * r.speed * dt;
-      r.z += Math.sin(r.angle) * r.speed * dt;
-      r.q = track.query(r.x, r.z, r.sHint);
-      r.sHint = r.q.sIdx;
+      r.x = ax; r.z = az;
+      r.q = qa;
+      r.sHint = qa.sIdx;
+      r.groundY = qa.groundY;            // the ground below, kept live
       // A kart clears the barrier in the air, so record where it is relative to
       // the wall without acting on it — otherwise landing outside one reads as
       // having come through it, and it gets snapped back in.
@@ -982,7 +998,11 @@ function driveRacer(r, c, dt) {
   r.sHint = r.q.sIdx;
   hitBarrier(r);
   r.offTrack = r.q.onRoad ? 0 : r.q.dist;
-  r.groundY += (r.q.groundY - r.groundY) * Math.min(1, dt * 14);
+  // Sit on the surface, not near it. This used to be a low-pass filter, which
+  // put the kart wherever the road was about 70ms ago — floating over crests
+  // and sunk into dips, by up to three wheel radii on the hilly tracks. The
+  // query height is exact now, so there is nothing left to smooth away.
+  r.groundY = r.q.groundY;
 
   // boost pads
   if (r.boostPadCd <= 0 && r.q.onRoad) {
@@ -1004,6 +1024,7 @@ function driveRacer(r, c, dt) {
       if (rel <= 2 && Math.abs(r.q.lat) <= ramp.latMax) {
         r.airV = T.airLaunch + r.speed * 0.13;
         r.airY = 0.01;
+        r.airW = r.groundY + 0.01;
         r.prevAirDrift = true;          // require a fresh drift press for the trick
         if (r.isPlayer) Sound.sweep(300, 700, 0.25, 0.1);
         break;
@@ -1322,6 +1343,7 @@ function updateHazards(dt) {
       if (Math.hypot(r.x - gy.x, r.z - gy.z) < gy.r) {
         r.airV = G.tune.geyserLaunch;
         r.airY = 0.01;
+        r.airW = r.groundY + 0.01;
         r.speed *= 0.7;
         if (r.isPlayer) { Sound.noiseBurst(0.4, 300, 0.25); G.cam.shake = 0.8; }
       }
@@ -1460,7 +1482,8 @@ export function stepRace(dt) {
         r.visYaw = r.angle;
         r.speed = G.tune.rescueSpeed;
         r.respawn = 0;
-        r.airY = 0; r.airV = 0; r.slip = 0; r.stall = 0; r.spin = 0;
+        r.airY = 0; r.airV = 0; r.airW = r.q ? r.q.groundY : 0;
+        r.slip = 0; r.stall = 0; r.spin = 0;
         r.forceRescue = 0; r.grapple = null;
         r.q = G.track.query(r.x, r.z, w.sIdx);
         r.sHint = r.q.sIdx;

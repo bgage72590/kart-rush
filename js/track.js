@@ -1056,7 +1056,14 @@ export function buildTrackFromDef(def, key) {
     }
     const s = samples[best];
     const lat = (x - s.x) * (-s.tz) + (z - s.z) * s.tx;
-    const roadY = s.y + LIFT;
+    // How far along the road we are between this sample and its neighbour. The
+    // road ribbon interpolates its height linearly between the same two, so
+    // matching it here is what puts the karts on the surface instead of
+    // stepping them from sample to sample down a hill.
+    const along = (x - s.x) * s.tx + (z - s.z) * s.tz;
+    const nb = samples[along >= 0 ? (best + 1) % N : (best - 1 + N) % N];
+    const seg = Math.hypot(nb.x - s.x, nb.z - s.z) || 1;
+    const roadY = lerp(s.y, nb.y, clamp(Math.abs(along) / seg, 0, 1)) + LIFT;
     const absLat = Math.abs(lat);
     let groundY;
     if (absLat <= halfW + kerbW) groundY = roadY;
