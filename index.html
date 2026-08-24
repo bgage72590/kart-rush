@@ -8,6 +8,9 @@
 <meta name="theme-color" content="#05060c">
 <title>Kart Rush</title>
 <link rel="stylesheet" href="style.css">
+<!-- YouTube Playables SDK. Must load before game code; it no-ops when the
+     game is served anywhere other than inside a YouTube Playable. -->
+<script src="https://www.youtube.com/game_api/v1"></script>
 <script type="importmap">
 { "imports": { "three": "./js/vendor/three.module.js" } }
 </script>
@@ -193,6 +196,6 @@
   <div id="loading">building track…</div>
 </div>
 
-<script type="module" src="js/main.js"></script>
+<script type="module" src="js/boot.js"></script>
 </body>
 </html>

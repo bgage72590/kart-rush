@@ -81,6 +81,29 @@ Portrait plays, and the camera widens to give back some of the view a narrow
 window crops, but the track reads far better across the long edge — the game
 says so once, then stops nagging.
 
+## YouTube Playables
+
+The game is wired for Playables and runs identically without it — the SDK is
+loaded from youtube.com and deliberately no-ops anywhere else, and every call
+through `js/playables.js` is guarded.
+
+- **Lifecycle** — `gameReady` / `firstFrameReady` so the host can drop its
+  loading UI.
+- **Pause / resume** — YouTube freezes a Playable when it is backgrounded or
+  covered by its own UI. A pause the *player* opened is theirs, though: a host
+  resume will not yank them out of it.
+- **Audio policy** — YouTube can disallow sound entirely. That is a separate
+  gate from the player's own mute; either one silences the game.
+- **Cloud save** — the whole `kartrush2.*` namespace is mirrored to the account
+  save, so coins, parts, best laps, ghosts and your custom track follow you to
+  another device. localStorage stays the synchronous working store; writes are
+  debounced into one upload and flushed immediately on a host pause. Hydration
+  runs before any module reads its slice, with a timeout — a slow or broken
+  cloud never holds the game hostage — and keys outside the namespace are
+  refused in both directions.
+- **Ads** — the call sites exist and are guarded, but nothing calls them.
+  Revenue sharing is an invite-only pilot.
+
 ## Performance
 
 Render resolution adapts: touch devices start at 1.5x device pixels instead of
@@ -92,6 +115,7 @@ it from oscillating.
 
 | File | Role |
 | --- | --- |
+| `js/boot.js` | entry point: hydrates the cloud save, then imports the game |
 | `js/config.js` | tuning constants, tracks, characters, modes |
 | `js/track.js` | procedural track builder (spline → heightfield → meshes) |
 | `js/tracklab.js` | track list, daily-challenge generator, custom persistence |
@@ -101,7 +125,9 @@ it from oscillating.
 | `js/hud.js` | DOM HUD, menus, garage, results, podium |
 | `js/fx.js` | particle pools, skid marks, blob shadows |
 | `js/audio.js` | WebAudio synth: engine, SFX, music |
-| `js/garage.js` | wallet, parts, paint (localStorage) |
+| `js/garage.js` | wallet, parts, paint |
+| `js/store.js` | save data: localStorage + debounced cloud mirror |
+| `js/playables.js` | YouTube Playables SDK bridge (no-ops off YouTube) |
 | `js/touch.js` | on-screen controls, auto-accelerate, touch-mode arming |
 | `js/main.js` | renderer, camera, state machine, main loop, adaptive resolution |
 

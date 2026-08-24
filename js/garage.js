@@ -2,6 +2,7 @@
 // Garage: coin wallet, kart part upgrades, paint. Persisted in localStorage.
 // ---------------------------------------------------------------------------
 import { CFG } from './config.js';
+import * as Store from './store.js';
 
 export const PARTS = {
   engine: { label: 'ENGINE', tiers: ['Stock', 'Turbo V6', 'Nitro X'], cost: [0, 60, 150], desc: '+ top speed' },
@@ -23,7 +24,7 @@ export const Garage = {
 
   load() {
     try {
-      const d = JSON.parse(localStorage.getItem(KEY));
+      const d = JSON.parse(Store.get(KEY));
       if (d) {
         this.coins = d.coins | 0;
         if (d.equipped) this.equipped = { ...this.equipped, ...d.equipped };
@@ -34,7 +35,7 @@ export const Garage = {
   },
 
   save() {
-    localStorage.setItem(KEY, JSON.stringify({
+    Store.set(KEY, JSON.stringify({
       coins: this.coins, equipped: this.equipped, owned: this.owned, paint: this.paint,
     }));
   },

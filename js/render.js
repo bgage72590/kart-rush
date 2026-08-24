@@ -58,7 +58,7 @@ export class Renderer {
     // Start conservatively on touch hardware; the adaptive scaler earns it back.
     this.maxRatio = Math.min(devicePixelRatio, 2);
     const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
-    this.ratio = coarse ? Math.min(devicePixelRatio, 1.5) : this.maxRatio;
+    this.ratio = coarse ? Math.min(devicePixelRatio, 1.25) : this.maxRatio;
     gl.setPixelRatio(this.ratio);
     gl.outputColorSpace = THREE.SRGBColorSpace;
     gl.toneMapping = THREE.ACESFilmicToneMapping;

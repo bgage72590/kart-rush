@@ -7,7 +7,8 @@ export const Sound = {
   ctx: null,
   master: null,
   musicBus: null,
-  muted: false,
+  muted: false,          // the player's own mute (M key)
+  hostAudio: true,       // YouTube can disable audio for the whole Playable
   started: false,
   engine: null,
   skid: null,
@@ -34,10 +35,29 @@ export const Sound = {
     if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
   },
 
+  // Backgrounded by the host (a Playables pause, a hidden tab): stop the engine
+  // loop and the music scheduler outright rather than leaving them running.
+  suspend() {
+    if (this.ctx && this.ctx.state === 'running') this.ctx.suspend();
+  },
+
+  // Two independent gates: the player's mute and the host's. Either one wins.
+  get silent() { return this.muted || !this.hostAudio; },
+
+  _applyGain() {
+    if (this.master) this.master.gain.value = this.silent ? 0 : 0.5;
+  },
+
   toggleMute() {
     this.muted = !this.muted;
-    if (this.master) this.master.gain.value = this.muted ? 0 : 0.5;
+    this._applyGain();
     return this.muted;
+  },
+
+  // YouTube reports whether audio is allowed and can change its mind mid-game.
+  setHostAudio(on) {
+    this.hostAudio = !!on;
+    this._applyGain();
   },
 
   _noiseBuffer(seconds) {
@@ -95,7 +115,7 @@ export const Sound = {
   // --- one-shots -------------------------------------------------------------
 
   blip(freq, dur, type, vol) {
-    if (!this.started || this.muted) return;
+    if (!this.started || this.silent) return;
     const c = this.ctx, t = c.currentTime;
     const o = c.createOscillator();
     const g = c.createGain();
@@ -109,7 +129,7 @@ export const Sound = {
   },
 
   sweep(from, to, dur, vol) {
-    if (!this.started || this.muted) return;
+    if (!this.started || this.silent) return;
     const c = this.ctx, t = c.currentTime;
     const o = c.createOscillator();
     const g = c.createGain();
@@ -123,7 +143,7 @@ export const Sound = {
   },
 
   noiseBurst(dur, freq, vol) {
-    if (!this.started || this.muted) return;
+    if (!this.started || this.silent) return;
     const c = this.ctx, t = c.currentTime;
     const s = c.createBufferSource();
     s.buffer = this._noiseBuffer(dur + 0.05);
@@ -193,7 +213,7 @@ export const Sound = {
   },
 
   updateMusic() {
-    if (!this.started || this.muted || !this.music.on) return;
+    if (!this.started || this.silent || !this.music.on) return;
     const c = this.ctx;
     // resync after mute or a backgrounded tab instead of scheduling a burst
     if (this.music.next < c.currentTime - 0.1) this.music.next = c.currentTime + 0.05;

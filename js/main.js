@@ -29,6 +29,8 @@ import {
 } from './hud.js';
 import { CHARACTERS, MODES } from './config.js';
 import { Garage } from './garage.js';
+import * as Store from './store.js';
+import { Playables } from './playables.js';
 
 // --- renderer ---------------------------------------------------------------
 
@@ -94,22 +96,22 @@ const stats = { frames: 0, ms: 0, fps: 0, last: performance.now() };
 // sustained comfortable stretch earns it back. Hysteresis on both sides and a
 // cooldown after every change, so it settles instead of oscillating.
 const RATIO_STEPS = [1, 1.25, 1.5, 1.75, 2];
-const quality = { avg: 16, slow: 0, fast: 0, cooldown: 2 };
+const quality = { avg: 16, slow: 0, fast: 0, cooldown: 3 };
 
 function adaptQuality(frameMs) {
   quality.avg += (frameMs - quality.avg) * 0.08;
   if (quality.cooldown > 0) { quality.cooldown -= frameMs / 1000; return; }
-  if (quality.avg > 22) { quality.slow += frameMs / 1000; quality.fast = 0; }
-  else if (quality.avg < 13) { quality.fast += frameMs / 1000; quality.slow = 0; }
+  if (quality.avg > 24) { quality.slow += frameMs / 1000; quality.fast = 0; }
+  else if (quality.avg < 12) { quality.fast += frameMs / 1000; quality.slow = 0; }
   else { quality.slow = quality.fast = 0; }
 
   let step = RATIO_STEPS.findIndex((r) => r >= rig.ratio - 0.01);
   if (step < 0) step = RATIO_STEPS.length - 1;
-  if (quality.slow > 1 && step > 0) {
-    if (rig.setRatio(RATIO_STEPS[step - 1])) { quality.cooldown = 2; quality.avg = 16; }
+  if (quality.slow > 1.5 && step > 0) {
+    if (rig.setRatio(RATIO_STEPS[step - 1])) { quality.cooldown = 3; quality.avg = 16; }
     quality.slow = 0;
-  } else if (quality.fast > 4 && step < RATIO_STEPS.length - 1) {
-    if (rig.setRatio(RATIO_STEPS[step + 1])) { quality.cooldown = 2; quality.avg = 16; }
+  } else if (quality.fast > 6 && step < RATIO_STEPS.length - 1) {
+    if (rig.setRatio(RATIO_STEPS[step + 1])) { quality.cooldown = 3; quality.avg = 16; }
     quality.fast = 0;
   }
 }
@@ -147,6 +149,7 @@ function doStartRace() {
   rotateHintTimer = 5;
   const track = attachTrack(G.trackIndex);
   startRace(scene, track, G.trackIndex, G.difficulty);
+  resetCamera();
   showScreen('hud');
   setRevMode(true);          // countdown: the gas button doubles as REV
 }
@@ -285,6 +288,11 @@ function exitPodium() {
 
 let camLat = 0;      // lateral drift offset, smoothed
 let lookBack = 0;    // 0..1 blend for the look-behind camera
+const camPos = { x: 0, z: 0, live: false };
+
+// Called whenever the kart teleports (race start, restart, rescue) so the
+// camera cuts instead of sweeping in from wherever it was.
+function resetCamera() { camPos.live = false; }
 
 function applyCamera(dt) {
   const track = G.track;
@@ -317,7 +325,17 @@ function applyCamera(dt) {
   const sx = shake > 0.01 ? (Math.random() - 0.5) * shake : 0;
   const sy = shake > 0.01 ? (Math.random() - 0.5) * shake : 0;
 
-  camera.position.set(cx + sx, lerp(camera.position.y || wantY, wantY, Math.min(1, dt * 8)) + sy, cz);
+  // A single frame of position noise on the kart shows up as camera shake, so
+  // low-pass the derived position. The time constant is short enough (~40ms)
+  // that the camera never reads as lagging behind the kart.
+  if (!camPos.live || Math.hypot(cx - camPos.x, cz - camPos.z) > 40) {
+    camPos.x = cx; camPos.z = cz; camPos.live = true;
+  } else {
+    const ck = Math.min(1, dt * 25);
+    camPos.x += (cx - camPos.x) * ck;
+    camPos.z += (cz - camPos.z) * ck;
+  }
+  camera.position.set(camPos.x + sx, lerp(camera.position.y || wantY, wantY, Math.min(1, dt * 8)) + sy, camPos.z);
   const lx = p.x + Math.cos(camAngle) * CFG.camLookAhead;
   const lz = p.z + Math.sin(camAngle) * CFG.camLookAhead;
   camera.lookAt(lx, p.groundY + 2.4, lz);
@@ -561,6 +579,28 @@ function handlePause() {
   if (wasPressed('Enter') || wasPressed(' ')) pauseAction(pauseSel);
 }
 
+// YouTube pauses a Playable whenever it is backgrounded or covered by its own
+// UI. Freeze then, and pick back up where the player left off — but only undo a
+// pause we caused, so a system resume never yanks someone out of the pause menu
+// they opened themselves.
+let systemPaused = false;
+
+function onSystemPause() {
+  Store.flushNow();                 // last guaranteed moment to persist
+  Sound.updateEngine(0, false, 0);
+  Sound.suspend();
+  if (G.state === 'RACE' || G.state === 'COUNTDOWN') {
+    systemPaused = true;
+    togglePause();
+  }
+}
+
+function onSystemResume() {
+  Sound.resume();
+  if (systemPaused && G.state === 'PAUSE') togglePause();
+  systemPaused = false;
+}
+
 // Escape/pause-button behaviour, shared by the key and the touch button.
 function togglePause() {
   if (G.state === 'RACE' || G.state === 'COUNTDOWN') {
@@ -603,6 +643,7 @@ function screenBack(which) {
 }
 
 function pauseAction(row) {
+  systemPaused = false;             // the player took over this pause
   if (row === 0) { G.state = prevState || 'RACE'; showScreen('hud'); }
   else if (row === 1) doStartRace();
   else quitToMenu();
@@ -625,6 +666,16 @@ bindMenuClicks(
 bindPauseClicks((row) => pauseAction(row));
 bindCharSelClicks((dir) => charSelDir(dir), () => doStartRace());
 bindGarageClicks((row, col) => garageActivate(row, col));
+Playables.onPauseResume(onSystemPause, onSystemResume);
+Sound.setHostAudio(Playables.isAudioEnabled());
+Playables.onAudioEnabledChange((on) => Sound.setHostAudio(on));
+// surface anything that escapes to the frame loop, which is otherwise invisible
+addEventListener('error', (e) => Playables.logError(e.message || 'error'));
+addEventListener('unhandledrejection', (e) => Playables.logError('unhandled rejection: ' + (e.reason && e.reason.message)));
+// the browser's own backgrounding deserves the same treatment
+addEventListener('visibilitychange', () => {
+  if (document.hidden) onSystemPause(); else onSystemResume();
+});
 bindScreenButtons({
   onBack: (id) => screenBack(id),
   onResultsAgain: () => resultsContinue(),
@@ -636,14 +687,14 @@ initTouch({ onPause: () => togglePause() });
 // remember mode/track/rivals/character/mute across visits
 function savePrefs() {
   try {
-    localStorage.setItem('kartrush2.prefs', JSON.stringify({
+    Store.set('kartrush2.prefs', JSON.stringify({
       mode: G.mode, trackIndex: G.trackIndex, difficulty: G.difficulty,
       playerChar: G.playerChar, muted: Sound.muted,
     }));
   } catch (e) { /* ignore */ }
 }
 try {
-  const prefs = JSON.parse(localStorage.getItem('kartrush2.prefs'));
+  const prefs = JSON.parse(Store.get('kartrush2.prefs'));
   if (prefs) {
     G.mode = clamp(prefs.mode | 0, 0, MODES.length - 1);
     G.trackIndex = clamp(prefs.trackIndex | 0, 0, trackCount() - 1);
@@ -657,10 +708,13 @@ attachTrack(G.trackIndex);
 setLoading(false);
 showScreen('menu');
 updateMenu(menuSel);
+Playables.gameReady();
 
 // --- main loop ---------------------------------------------------------------------
 
 let last = performance.now();
+let dtSmooth = 1 / 60;
+let firstFrameSent = false;
 
 function frame(now) {
   requestAnimationFrame(frame);
@@ -668,6 +722,12 @@ function frame(now) {
   last = now;
   if (dt > 1 / 20) dt = 1 / 20;
   if (dt <= 0) dt = 1 / 240;
+  // Frame intervals on a phone are noisy — missed vsync, GC, thermal steps.
+  // Integrating that noise directly is what reads as jitter, so step the world
+  // against a low-passed interval. A low-pass preserves the mean, so the race
+  // clock still tracks the wall clock.
+  dtSmooth += (dt - dtSmooth) * 0.25;
+  dt = clamp(dtSmooth, 1 / 240, 1 / 20);
   const time = now / 1000;
 
   switch (G.state) {
@@ -806,6 +866,7 @@ function frame(now) {
   Sound.updateMusic();
 
   if (innerWidth > 0 && innerHeight > 0) rig.render();   // nothing to draw into yet
+  if (!firstFrameSent) { firstFrameSent = true; Playables.firstFrameReady(); }
   clearPressed();
   adaptQuality(dt * 1000);      // dt is the real frame interval under rAF
 
@@ -830,6 +891,7 @@ window.__kr = {
   renderOnce: () => renderer.render(scene, camera),
   setAuto: (v) => { G.auto = v; },
   touch, readControls, togglePause, resultsContinue, rig, quality,
+  Store, Playables, Sound, onSystemPause, onSystemResume,
   // Pump one frame by hand. Lets a headless harness run whole races
   // deterministically instead of waiting on requestAnimationFrame.
   tick: (ms = 1000 / 60) => frame(last + ms),

@@ -11,6 +11,7 @@
 // AUTO pill switches to a manual gas button for anyone who wants it.
 // ---------------------------------------------------------------------------
 import { clamp } from './util.js';
+import * as Store from './store.js';
 
 export const touch = {
   active: false,        // touch mode engaged (first touch seen)
@@ -26,8 +27,10 @@ export const touch = {
 
 const $ = (id) => document.getElementById(id);
 
-const STEER_TRAVEL = 58;      // px of thumb travel for full lock
-const KNOB_TRAVEL = 40;       // px the visual knob is allowed to move
+const STEER_TRAVEL = 80;      // px of thumb travel for full lock
+const KNOB_TRAVEL = 44;       // px the visual knob is allowed to move
+const STEER_EXPO = 1.6;       // >1 softens small corrections, keeps full lock
+const STEER_DEAD = 0.05;      // ignore thumb tremor around centre
 
 let els = null;
 let steerId = -1, steerOriginX = 0;
@@ -102,11 +105,15 @@ function bindButton(el, key, opts = {}) {
 
 // --- steering -------------------------------------------------------------------
 
+// Raw thumb offset drives the knob so it tracks the finger exactly, but the
+// steering value gets an exponential curve: a linear stick makes a kart twitchy,
+// because the corrections you make most often are the small ones.
 function steerTo(clientX) {
-  const dx = clientX - steerOriginX;
-  touch.steer = clamp(dx / STEER_TRAVEL, -1, 1);
+  const raw = clamp((clientX - steerOriginX) / STEER_TRAVEL, -1, 1);
+  const mag = Math.abs(raw);
+  touch.steer = mag < STEER_DEAD ? 0 : Math.sign(raw) * Math.pow(mag, STEER_EXPO);
   els.knob.style.transform =
-    'translate(calc(-50% + ' + (touch.steer * KNOB_TRAVEL).toFixed(1) + 'px), -50%)';
+    'translate(calc(-50% + ' + (raw * KNOB_TRAVEL).toFixed(1) + 'px), -50%)';
 }
 
 function bindSteer() {
@@ -219,13 +226,11 @@ export function setRevMode(on) {
 }
 
 function savePref() {
-  try { localStorage.setItem('kartrush2.autoGas', touch.autoGas ? '1' : '0'); } catch (e) { /* ignore */ }
+  Store.set('kartrush2.autoGas', touch.autoGas ? '1' : '0');
 }
 function loadPref() {
-  try {
-    const v = localStorage.getItem('kartrush2.autoGas');
-    if (v != null) touch.autoGas = v === '1';
-  } catch (e) { /* ignore */ }
+  const v = Store.get('kartrush2.autoGas');
+  if (v != null) touch.autoGas = v === '1';
 }
 
 // Show the driving controls only while actually driving.

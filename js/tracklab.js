@@ -4,6 +4,7 @@
 // ---------------------------------------------------------------------------
 import { TRACK_DEFS } from './config.js';
 import { TAU, clamp, mulberry32 } from './util.js';
+import * as Store from './store.js';
 
 const CUSTOM_KEY = 'kartrush2.customTrack';
 
@@ -68,7 +69,7 @@ export function makeDailyDef() {
 
 export function loadCustomDef() {
   try {
-    const d = JSON.parse(localStorage.getItem(CUSTOM_KEY));
+    const d = JSON.parse(Store.get(CUSTOM_KEY));
     if (d && d.points && d.points.length >= 8) {
       // re-attach the live theme object for its base
       const base = THEME_BASES[d.themeIndex] || THEME_BASES[0];
@@ -92,7 +93,7 @@ export function loadCustomDef() {
 
 export function saveCustomDef(def) {
   def.rev = (def.rev || 0) + 1;
-  localStorage.setItem(CUSTOM_KEY, JSON.stringify({
+  Store.set(CUSTOM_KEY, JSON.stringify({
     points: def.points,
     themeIndex: def.themeIndex,
     elevAmp: def.elevAmp,

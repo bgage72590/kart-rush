@@ -10,6 +10,7 @@ import { Sound } from './audio.js';
 import { KartVisual } from './kart.js';
 import { ParticlePool, SkidMarks, softDotTexture } from './fx.js';
 import { Garage } from './garage.js';
+import * as Store from './store.js';
 
 export const G = {
   state: 'MENU',            // MENU | CHARSEL | COUNTDOWN | RACE | PAUSE | RESULTS
@@ -135,9 +136,7 @@ function saveGhost(total) {
   if (!G.ghostRec || G.ghostRec.length < 10) return false;
   if (G.ghostBest && G.ghostBest.total <= total) return false;
   const data = { total, charIdx: G.playerChar, s: G.ghostRec };
-  try {
-    localStorage.setItem('kartrush2.ghost.' + recordKey(G.track.def), JSON.stringify(data));
-  } catch (e) { /* quota */ }
+  Store.set('kartrush2.ghost.' + recordKey(G.track.def), JSON.stringify(data));
   return true;
 }
 
@@ -336,7 +335,7 @@ export function startRace(sceneRef, track, trackIndex, difficulty) {
   G.ghostAcc = 0;
   if (timeTrial) {
     try {
-      const d = JSON.parse(localStorage.getItem('kartrush2.ghost.' + recordKey(track.def)));
+      const d = JSON.parse(Store.get('kartrush2.ghost.' + recordKey(track.def)));
       if (d && d.s && d.s.length > 9) {
         G.ghostBest = d;
         makeGhostVisual(d.charIdx == null ? G.playerChar : d.charIdx);
@@ -474,8 +473,8 @@ function finishRace() {
   Sound.finish(G.mode === 2 ? true : me.place <= 3);
   if (me.bestLap != null) {
     const key = 'kartrush2.best.' + recordKey(G.track.def);
-    const cur = parseFloat(localStorage.getItem(key));
-    if (!isFinite(cur) || me.bestLap < cur) localStorage.setItem(key, String(me.bestLap));
+    const cur = parseFloat(Store.get(key));
+    if (!isFinite(cur) || me.bestLap < cur) Store.set(key, String(me.bestLap));
   }
 }
 
@@ -487,7 +486,7 @@ export function recordKey(def) {
 }
 
 export function getBestByName(name) {
-  const v = parseFloat(localStorage.getItem('kartrush2.best.' + name));
+  const v = parseFloat(Store.get('kartrush2.best.' + name));
   return isFinite(v) ? v : null;
 }
 
