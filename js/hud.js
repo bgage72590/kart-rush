@@ -2,7 +2,7 @@
 // DOM HUD: lap/time/position panels, item slot, minimap, speedometer,
 // menus, pause and results screens.
 // ---------------------------------------------------------------------------
-import { CFG, TRACK_DEFS, DIFFICULTIES, CHARACTERS, charStats, MODES } from './config.js';
+import { CFG, TRACK_DEFS, CLASSES, CHARACTERS, charStats, MODES } from './config.js';
 import { clamp, fmtTime, ordinal, suffix, TAU, makeCanvas } from './util.js';
 import { G, getBestForDef } from './race.js';
 import { Garage, PARTS, PAINTS } from './garage.js';
@@ -493,8 +493,7 @@ export function updateMenu(sel) {
   const tdef = getTrackDef(G.trackIndex);
   el.mTrack.textContent = G.mode === 1 ? 'Rush Cup — all 5 tracks' : tdef.name;
   document.querySelector('.menuRow[data-row="1"]').classList.toggle('dim', G.mode === 1);
-  document.querySelector('.menuRow[data-row="2"]').classList.toggle('dim', G.mode === 2);
-  el.mDiff.textContent = DIFFICULTIES[G.difficulty].name;
+  el.mDiff.textContent = CLASSES[G.cls].name;
   $('mGarage').textContent = '🪙 ' + Garage.coins + '  ·  customize kart';
   $('mStart').textContent = ['START RACE', 'START CUP', 'START TIME TRIAL'][G.mode];
   const best = getBestForDef(tdef);
@@ -706,7 +705,7 @@ export function updateHUD() {
   spdCtx.beginPath();
   spdCtx.arc(cx, cy, rad, Math.PI * 0.75, Math.PI * 2.25);
   spdCtx.stroke();
-  const sr = clamp(Math.abs(p.speed) / (CFG.topSpeed * 1.55), 0, 1);
+  const sr = clamp(Math.abs(p.speed) / (G.tune.topSpeed * 1.55), 0, 1);
   spdCtx.strokeStyle = p.boost > 0 ? '#ff8a2b' : '#5bd5ff';
   spdCtx.beginPath();
   spdCtx.arc(cx, cy, rad, Math.PI * 0.75, Math.PI * (0.75 + sr * 1.5));
@@ -805,7 +804,7 @@ export function showResults() {
     el.resultsTitle.textContent =
       me.place === 1 ? 'YOU WIN!' : (me.place <= 3 ? 'PODIUM!' : 'FINISHED');
     el.resultsSub.textContent =
-      G.track.def.name + '  ·  ' + DIFFICULTIES[G.difficulty].name +
+      G.track.def.name + '  ·  ' + CLASSES[G.cls].name +
       '  ·  earned 🪙 ' + ((G.lastPayout || 0) + (G.coinsThisRace || 0)) +
       ' (wallet ' + Garage.coins + ')';
   }

@@ -34,6 +34,11 @@ then open <http://localhost:8123>. (ES modules need a server — double-clicking
   past the kart ahead).
 - **3 modes**: Single Race, Grand Prix (5-race cup with points, standings, and
   a podium ceremony), Time Trial (race your own ghost).
+- **3 engine classes**: 50cc, 100cc, 150cc. Speed scales the whole race — your
+  kart, the AI and the projectiles alike — so the difficulty is that corners
+  arrive sooner, not that the field got a secret buff. All three are unlocked
+  from the start, and records are kept per class because a 150cc lap would
+  otherwise beat every 50cc lap forever.
 - **Progression**: coins on the track + race payouts fund garage upgrades
   (engine/tires/spoiler, each visible on the kart) and paint jobs.
 - Drifting with two-tier mini-turbos, jump ramps with air tricks, boost pads,
@@ -41,6 +46,26 @@ then open <http://localhost:8123>. (ES modules need a server — double-clicking
   a chiptune loop that speeds up on the final lap.
 - **Rocket starts** (rev on the last countdown beat — hold too long and you
   bog down) and **slipstreaming** behind a rival for a surge.
+
+## Why classes rather than a difficulty slider
+
+The old setting scaled the AI's *top speed* between 0.80 and 1.00. Measured, the
+AI sat at that ceiling roughly 1% of the time — it is corner-limited, not
+speed-limited — so the whole range moved lap times by 0.3%. The only thing that
+genuinely changed was whether the AI drifted at all.
+
+Engine class scales `topSpeed` itself, and `cornerSpeed` is derived from it, so
+the dial moves the thing that actually binds. Same measurement, same track:
+
+| | 50cc | 100cc | 150cc |
+| --- | --- | --- | --- |
+| AI best lap | 56.72s | 45.68s | 37.54s |
+| Average AI speed | 32.0 | 38.9 | 47.5 |
+
+A 34% spread instead of 0.3%. The handling model is written in ratios against
+top speed — steering authority, drift entry and exit, slipstream range — so
+scaling it preserves the character of the driving and changes only how much
+time you get to use it.
 
 ## Controls
 

@@ -3,7 +3,7 @@
 // stepRace() is pure logic (no rendering); syncVisuals() moves the meshes.
 // ---------------------------------------------------------------------------
 import * as THREE from 'three';
-import { CFG, CHARACTERS, charStats, DIFFICULTIES, TRACK_DEFS, GP_POINTS } from './config.js';
+import { CFG, CHARACTERS, charStats, CLASSES, TRACK_DEFS, GP_POINTS } from './config.js';
 import { TAU, clamp, lerp, angNorm } from './util.js';
 import { readControls, itemPressed, revving } from './input.js';
 import { Sound } from './audio.js';
@@ -12,10 +12,29 @@ import { ParticlePool, SkidMarks, softDotTexture } from './fx.js';
 import { Garage } from './garage.js';
 import * as Store from './store.js';
 
+// Everything the handling model measures against top speed is already written
+// as a ratio — steering authority, drift entry and exit, slipstream range — so
+// scaling these preserves the character of the driving and changes only how
+// much time you get to use it. Only the handful of genuinely absolute values
+// need carrying along.
+export function makeTune(cls) {
+  const k = cls.speed;
+  return {
+    speed: k,
+    topSpeed: CFG.topSpeed * k,
+    accel: CFG.accel * k,
+    brake: CFG.brake * k,
+    revSpeed: CFG.revSpeed * k,
+    shell: 88 * k,            // projectiles must keep pace with the field
+    rampMin: 24 * k,          // minimum speed to launch off a jump
+  };
+}
+
 export const G = {
   state: 'MENU',            // MENU | CHARSEL | COUNTDOWN | RACE | PAUSE | RESULTS
   trackIndex: 0,
-  difficulty: 1,
+  cls: 1,                   // engine class index into CLASSES
+  tune: makeTune(CLASSES[1]),
   playerChar: 0,
   rivalId: -1,
   prevPlayerPlace: 6,
@@ -263,22 +282,38 @@ function makeRacer(id, charIdx, isPlayer, track, gridSlot) {
   };
 }
 
-export function startRace(sceneRef, track, trackIndex, difficulty) {
+// Rings own a material each and grapple lines own a geometry each. The
+// per-frame path disposes them when they expire naturally, so every reset path
+// has to as well — otherwise each abandoned or restarted race leaks one of
+// each, which is exactly what cycling classes surfaced.
+export function clearProjectiles() {
+  for (const s of G.shells) if (s.mesh) scene.remove(s.mesh);
+  for (const b of G.bananas) if (b.mesh) scene.remove(b.mesh);
+  for (const o of G.oils) if (o.mesh) scene.remove(o.mesh);
+  for (const c of G.comets) if (c.mesh) scene.remove(c.mesh);
+  for (const rg of G.rings) {
+    if (!rg.mesh) continue;
+    scene.remove(rg.mesh);
+    rg.mesh.material.dispose();
+  }
+  for (const gp of G.grapples) {
+    if (!gp.line) continue;
+    scene.remove(gp.line);
+    gp.line.geometry.dispose();
+  }
+  G.shells = []; G.bananas = []; G.oils = []; G.comets = []; G.rings = []; G.grapples = [];
+}
+
+export function startRace(sceneRef, track, trackIndex, cls) {
   scene = sceneRef;
   if (G.track && G.track !== track) scene.remove(G.track.group);
   if (!G.track || G.track !== track) scene.add(track.group);
   G.track = track;
   G.trackIndex = trackIndex;
-  G.difficulty = difficulty;
+  G.cls = cls;
+  G.tune = makeTune(CLASSES[cls]);
 
-  // clear projectiles + transient fx
-  for (const s of G.shells) if (s.mesh) scene.remove(s.mesh);
-  for (const b of G.bananas) if (b.mesh) scene.remove(b.mesh);
-  for (const o of G.oils) if (o.mesh) scene.remove(o.mesh);
-  for (const c of G.comets) if (c.mesh) scene.remove(c.mesh);
-  for (const rg of G.rings) if (rg.mesh) scene.remove(rg.mesh);
-  for (const gp of G.grapples) if (gp.line) scene.remove(gp.line);
-  G.shells = []; G.bananas = []; G.oils = []; G.comets = []; G.rings = []; G.grapples = [];
+  clearProjectiles();
   for (const sm of track.snowmen) { sm.alive = true; sm.group.visible = true; }
   for (const box of track.itemBoxes) {
     box.cooldown = 0;
@@ -482,7 +517,10 @@ function finishRace() {
 // the name "My Track" through every edit, so its rev has to be part of the key
 // or an old ghost replays through new terrain.
 export function recordKey(def) {
-  return def.custom ? 'My Track#' + (def.rev || 0) : def.name;
+  const base = def.custom ? 'My Track#' + (def.rev || 0) : def.name;
+  // A 150cc lap would beat every 50cc lap forever, so a record only means
+  // something within its own class.
+  return base + '@' + CLASSES[G.cls].name;
 }
 
 export function getBestByName(name) {
@@ -564,7 +602,7 @@ function useItem(r) {
     }
     const sh = {
       kind, x: r.x + fx * 12, z: r.z + fz * 12,
-      angle: r.angle, speed: 88, owner: r.id, life: 9, target,
+      angle: r.angle, speed: G.tune.shell, owner: r.id, life: 9, target,
       sHint: r.sHint, groundY: r.groundY, mesh: makeShellMesh(kind),
     };
     sh.mesh.position.set(sh.x, sh.groundY + 0.85, sh.z);
@@ -718,7 +756,7 @@ function driveRacer(r, c, dt) {
   const track = G.track;
   const grip = r.q && r.q.onRoad ? 1 : r.mods.grass;
   const boosting = r.boost > 0;
-  const maxSpeed = CFG.topSpeed * r.stats.top * r.mods.top * grip * (boosting ? 1.55 : 1) *
+  const maxSpeed = G.tune.topSpeed * r.stats.top * r.mods.top * grip * (boosting ? 1.55 : 1) *
     (r.star > 0 ? 1.22 : 1) * (r.isPlayer ? 1 : r.aiGrade);
 
   // ice patches: detect before steering so this step slides
@@ -741,7 +779,7 @@ function driveRacer(r, c, dt) {
     const d = Math.hypot(dx, dz);
     r.angle = Math.atan2(dz, dx);
     r.visYaw = r.angle;
-    r.speed = Math.max(r.speed, CFG.topSpeed * 1.45);
+    r.speed = Math.max(r.speed, G.tune.topSpeed * 1.45);
     if (d < 5 || gp.t >= gp.dur) {
       r.grapple = null;
       r.boost = Math.max(r.boost, 0.8);
@@ -791,21 +829,21 @@ function driveRacer(r, c, dt) {
     r.speed -= r.speed * 3.2 * dt;
     r.visYaw = angNorm(r.visYaw + Math.sin(r.stall * 30) * dt * 2);
   } else {
-    if (c.gas) r.speed += CFG.accel * r.stats.accel * (boosting ? 1.8 : 1) * dt;
+    if (c.gas) r.speed += G.tune.accel * r.stats.accel * (boosting ? 1.8 : 1) * dt;
     else r.speed -= r.speed * 0.9 * dt;
-    if (c.brake) r.speed -= CFG.brake * dt;
+    if (c.brake) r.speed -= G.tune.brake * dt;
 
     const drag = (grip < 1 ? 2.6 : 0.5) + (r.speed > maxSpeed ? 3.2 : 0);
     r.speed -= (r.speed - Math.min(r.speed, maxSpeed)) * drag * dt;
     r.speed -= r.speed * (grip < 1 ? 1.5 : (r.onIce ? 0.1 : 0.32)) * dt;
-    r.speed = clamp(r.speed, -CFG.revSpeed, Math.max(maxSpeed, r.speed));
+    r.speed = clamp(r.speed, -G.tune.revSpeed, Math.max(maxSpeed, r.speed));
 
-    const sr = r.speed / CFG.topSpeed;
+    const sr = r.speed / G.tune.topSpeed;
     const steerPower = CFG.steerPower * r.stats.steer * r.mods.steer *
       (1 - 0.34 * clamp(sr, 0, 1.4)) * (grip < 1 ? 0.85 : 1) *
       (r.slip > 0 ? 0.15 : 1) * (r.onIce ? 0.35 : 1);
 
-    if (c.drift && r.drift === 0 && r.speed > CFG.topSpeed * 0.4) {
+    if (c.drift && r.drift === 0 && r.speed > G.tune.topSpeed * 0.4) {
       if (r.hop <= 0 && !r.driftReady) { r.hop = 0.18; r.driftReady = true; }
       if (r.hop <= 0 && c.steer !== 0) { r.drift = c.steer > 0 ? 1 : -1; r.driftCharge = 0; }
     }
@@ -817,7 +855,7 @@ function driveRacer(r, c, dt) {
       r.drift = 0; r.driftCharge = 0; r.driftReady = false;
     }
     if (r.hop > 0) r.hop -= dt;
-    if (r.speed < CFG.topSpeed * 0.25) { r.drift = 0; r.driftCharge = 0; }
+    if (r.speed < G.tune.topSpeed * 0.25) { r.drift = 0; r.driftCharge = 0; }
 
     if (r.drift !== 0) {
       const prevCharge = r.driftCharge;
@@ -833,7 +871,7 @@ function driveRacer(r, c, dt) {
     } else {
       if (r.speed !== 0) {
         r.angle += c.steer * steerPower * dt *
-          clamp(Math.abs(r.speed) / (CFG.topSpeed * 0.32), 0, 1) * Math.sign(r.speed || 1);
+          clamp(Math.abs(r.speed) / (G.tune.topSpeed * 0.32), 0, 1) * Math.sign(r.speed || 1);
       }
       r.visYaw = angNorm(r.visYaw + angNorm(r.angle - r.visYaw) * Math.min(1, dt * 14));
     }
@@ -847,7 +885,7 @@ function driveRacer(r, c, dt) {
   r.hopZ = r.hop > 0 ? Math.sin((0.18 - r.hop) / 0.18 * Math.PI) * 1.1 : 0;
 
   // slipstream: tuck in behind someone at speed for a second, get a surge
-  if (r.spin <= 0 && r.stall <= 0 && r.speed > CFG.topSpeed * 0.55) {
+  if (r.spin <= 0 && r.stall <= 0 && r.speed > G.tune.topSpeed * 0.55) {
     let drafting = false;
     const fx2 = Math.cos(r.angle), fz2 = Math.sin(r.angle);
     for (const o of G.racers) {
@@ -856,7 +894,7 @@ function driveRacer(r, c, dt) {
       const ahead = dx * fx2 + dz * fz2;
       if (ahead < 3 || ahead > 15) continue;
       const side = Math.abs(dx * -fz2 + dz * fx2);
-      if (side < 3.2 && Math.abs(o.speed) > CFG.topSpeed * 0.5) { drafting = true; break; }
+      if (side < 3.2 && Math.abs(o.speed) > G.tune.topSpeed * 0.5) { drafting = true; break; }
     }
     if (drafting) {
       r.draft = (r.draft || 0) + dt;
@@ -899,7 +937,7 @@ function driveRacer(r, c, dt) {
   }
 
   // jump ramps
-  if (r.airY <= 0 && r.q.onRoad && r.speed > 24) {
+  if (r.airY <= 0 && r.q.onRoad && r.speed > G.tune.rampMin) {
     for (const ramp of track.ramps) {
       const rel = ((r.q.sIdx - ramp.s0) % track.N + track.N) % track.N;
       if (rel <= 2 && Math.abs(r.q.lat) <= ramp.latMax) {
@@ -919,7 +957,7 @@ function aiControls(r, dt) {
   const track = G.track;
   const wps = track.wps, n = wps.length;
   const a = r.ai;
-  const diff = DIFFICULTIES[G.difficulty];
+  const cls = CLASSES[G.cls];
 
   a.nextOffset -= dt;
   if (a.nextOffset <= 0) {
@@ -941,7 +979,7 @@ function aiControls(r, dt) {
     wps[(r.wpIdx + 2) % n].curve,
     wps[(r.wpIdx + 4) % n].curve,
     wps[(r.wpIdx + 6) % n].curve);
-  const cornerSpeed = CFG.topSpeed * clamp(1.06 - curveAhead * 1.15, 0.55, 1);
+  const cornerSpeed = G.tune.topSpeed * clamp(1.06 - curveAhead * 1.15, 0.55, 1);
   const brake = r.speed > cornerSpeed * 1.12;
   const coast = r.speed > cornerSpeed;
 
@@ -949,8 +987,8 @@ function aiControls(r, dt) {
   // The rival bands twice as hard, so it stays glued to you.
   const me = G.racers[0];
   const gap = (me.rank || 0) - (r.rank || 0);
-  const band = r.id === G.rivalId ? diff.band * 2 : diff.band;
-  r.aiGrade = diff.skill * a.grade * (1 + clamp(gap / (n * 0.7), -1, 1) * band);
+  const band = r.id === G.rivalId ? cls.band * 2 : cls.band;
+  r.aiGrade = cls.skill * a.grade * (1 + clamp(gap / (n * 0.7), -1, 1) * band);
 
   // contextual item usage: bananas go into corner entries, shells need a
   // target roughly ahead; everything else fires on the timer
@@ -980,7 +1018,7 @@ function aiControls(r, dt) {
     steer,
     gas: !coast,
     brake,
-    drift: Math.abs(steer) > 0.72 && r.speed > CFG.topSpeed * 0.55 && diff.skill > 0.85,
+    drift: Math.abs(steer) > 0.72 && r.speed > G.tune.topSpeed * 0.55 && cls.skill > 0.9,
     item: useIt,
   };
 }
@@ -1315,7 +1353,7 @@ export function stepRace(dt) {
   const p = G.racers[0];
   const k = Math.min(1, dt * 6.5);
   G.cam.angle = angNorm(G.cam.angle + angNorm(p.angle - G.cam.angle) * k);
-  const speedRatio = clamp(Math.abs(p.speed) / CFG.topSpeed, 0, 1.6);
+  const speedRatio = clamp(Math.abs(p.speed) / G.tune.topSpeed, 0, 1.6);
   const dist = CFG.camDist + speedRatio * 1.6;
   const wantX = p.x - Math.cos(G.cam.angle) * dist;
   const wantZ = p.z - Math.sin(G.cam.angle) * dist;

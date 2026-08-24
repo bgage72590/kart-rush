@@ -87,10 +87,20 @@ export function charStats(c) {
 export const MODES = ['Single Race', 'Grand Prix', 'Time Trial'];
 export const GP_POINTS = [10, 8, 6, 4, 2, 1];
 
-export const DIFFICULTIES = [
-  { name: 'Cruise', skill: 0.80, band: 0.05 },
-  { name: 'Rival', skill: 0.92, band: 0.09 },
-  { name: 'Blistering', skill: 1.00, band: 0.14 },
+// Engine classes. `speed` scales the whole race — your kart, the AI, and the
+// projectiles alike — so the difficulty is that corners arrive sooner, not that
+// the field got a secret buff. It also happens to be the only dial that bites:
+// the AI is corner-limited, and its corner speed is proportional to top speed,
+// where the old skill rating only moved a ceiling it reached ~1% of the time.
+//
+// `skill` rides along so the field drives a little better at the top end too.
+// Pure speed scaling alone leaves a perfectly precise but slow opponent, which
+// reads as robotic rather than easy. `band` is the rubber-band strength, eased
+// off at 150cc so the AI is not held back at the class meant to be hard.
+export const CLASSES = [
+  { name: '50cc', speed: 0.80, skill: 0.86, band: 0.10 },
+  { name: '100cc', speed: 1.00, skill: 0.94, band: 0.09 },
+  { name: '150cc', speed: 1.22, skill: 1.00, band: 0.07 },
 ];
 
 export const TRACK_DEFS = [

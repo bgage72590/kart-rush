@@ -2,7 +2,7 @@
 // Boot, renderer, camera, state machine, main loop.
 // ---------------------------------------------------------------------------
 import * as THREE from 'three';
-import { CFG, TRACK_DEFS, DIFFICULTIES } from './config.js';
+import { CFG, TRACK_DEFS, CLASSES } from './config.js';
 import { clamp, lerp, angNorm } from './util.js';
 import {
   keys, wasPressed, clearPressed, setFirstInputHook, lookingBack, readControls,
@@ -18,6 +18,7 @@ import { TrackEditor } from './editor.js';
 import { Renderer, SunShadow } from './render.js';
 import {
   G, initRace, startRace, stepRace, syncVisuals, hideRacers, getVisuals, clearFx,
+  clearProjectiles,
   awardGpPoints, confettiBurst, cleanupGhost, resolveRocketStart,
 } from './race.js';
 import {
@@ -136,21 +137,11 @@ function attachTrack(index) {
   return track;
 }
 
-function clearProjectiles() {
-  for (const s of G.shells) if (s.mesh) scene.remove(s.mesh);
-  for (const b of G.bananas) if (b.mesh) scene.remove(b.mesh);
-  for (const o of G.oils) if (o.mesh) scene.remove(o.mesh);
-  for (const c of G.comets) if (c.mesh) scene.remove(c.mesh);
-  for (const rg of G.rings) if (rg.mesh) scene.remove(rg.mesh);
-  for (const gp of G.grapples) if (gp.line) scene.remove(gp.line);
-  G.shells = []; G.bananas = []; G.oils = []; G.comets = []; G.rings = []; G.grapples = [];
-}
-
 function doStartRace() {
   hideCharPreview();
   rotateHintTimer = 5;
   const track = attachTrack(G.trackIndex);
-  startRace(scene, track, G.trackIndex, G.difficulty);
+  startRace(scene, track, G.trackIndex, G.cls);
   resetCamera();
   showScreen('hud');
   setRevMode(true);          // countdown: the gas button doubles as REV
@@ -345,7 +336,7 @@ function applyCamera(dt) {
   lookBack += (wantBack - lookBack) * Math.min(1, dt * 10);
   if (lookBack > 0.02) camAngle += Math.PI * lookBack;
 
-  const speedRatio = clamp(Math.abs(p.speed) / CFG.topSpeed, 0, 1.6);
+  const speedRatio = clamp(Math.abs(p.speed) / G.tune.topSpeed, 0, 1.6);
   const dist = CFG.camDist + speedRatio * 1.6;
 
   // swing the camera slightly to the outside of a drift
@@ -675,8 +666,10 @@ function menuArrow(row, dir) {
   } else if (row === 1 && G.mode !== 1) {
     G.trackIndex = (G.trackIndex + dir + trackCount()) % trackCount();
     attachTrack(G.trackIndex);
-  } else if (row === 2 && G.mode !== 2) {
-    G.difficulty = clamp(G.difficulty + dir, 0, DIFFICULTIES.length - 1);
+  } else if (row === 2) {
+    // The engine class scales your own kart too, so it matters in a time trial
+    // just as much as it does with a field to race.
+    G.cls = clamp(G.cls + dir, 0, CLASSES.length - 1);
   }
   savePrefs();
   updateMenu(menuSel);
@@ -812,7 +805,7 @@ $id('gAdBtn').addEventListener('click', () => watchAd());
 function savePrefs() {
   try {
     Store.set('kartrush2.prefs', JSON.stringify({
-      mode: G.mode, trackIndex: G.trackIndex, difficulty: G.difficulty,
+      mode: G.mode, trackIndex: G.trackIndex, cls: G.cls,
       playerChar: G.playerChar, muted: Sound.muted,
     }));
   } catch (e) { /* ignore */ }
@@ -822,7 +815,10 @@ try {
   if (prefs) {
     G.mode = clamp(prefs.mode | 0, 0, MODES.length - 1);
     G.trackIndex = clamp(prefs.trackIndex | 0, 0, trackCount() - 1);
-    G.difficulty = clamp(prefs.difficulty | 0, 0, DIFFICULTIES.length - 1);
+    // `difficulty` is the pre-class key; carry an old preference across rather
+    // than resetting someone to the middle class on their next visit.
+    const savedCls = prefs.cls != null ? prefs.cls : prefs.difficulty;
+    G.cls = clamp(savedCls | 0, 0, CLASSES.length - 1);
     G.playerChar = clamp(prefs.playerChar | 0, 0, CHARACTERS.length - 1);
     if (prefs.muted) setFirstInputHook(() => { Sound.init(); Sound.resume(); Sound.toggleMute(); });
   }
@@ -927,6 +923,9 @@ function frame(now) {
         updateGateLamps();
       }
       const p = G.racers[0];
+      // Deliberately against the base top speed, not the class ceiling: engine
+      // pitch should track absolute speed, so 150cc audibly screams and 50cc
+      // audibly does not. Scaling this per class would make them sound alike.
       Sound.updateEngine(
         clamp(Math.abs(p.speed) / CFG.topSpeed, 0, 1.4), true,
         (p.drift !== 0 ? 0.8 : 0) + (p.q && p.q.onRoad ? 0 : 0.5));
