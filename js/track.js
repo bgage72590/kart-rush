@@ -478,6 +478,21 @@ export function buildTrackFromDef(def, key) {
     for (let k = -span; k <= span; k++) railAt[((i + k) % N + N) % N] &= ~bit;
   }
 
+  // The nearest sample within `span` where this side of the road is open, or -1.
+  // Small scattered hazards get placed through it rather than having the wall
+  // cut open for them — a snowman is not worth a hole, and one you can never
+  // reach is just scenery.
+  function nearestOpen(i, side, span) {
+    const bit = side < 0 ? RAIL_NEG : RAIL_POS;
+    for (let k = 0; k <= span; k++) {
+      for (const d of (k ? [-k, k] : [0])) {
+        const j = ((i + d) % N + N) % N;
+        if (!(railAt[j] & bit)) return j;
+      }
+    }
+    return -1;
+  }
+
   // --- themed hazards -------------------------------------------------------------
 
   const lavaPools = [], geysers = [], icePatches = [], snowmen = [];
@@ -539,9 +554,10 @@ export function buildTrackFromDef(def, key) {
     const carrotMat = new THREE.MeshStandardMaterial({ color: 0xe8842b, roughness: 0.8 });
     const hatMat = new THREE.MeshStandardMaterial({ color: 0x22242e, roughness: 0.9 });
     for (let k = 0; k < 16; k++) {
-      const i = Math.floor((k / 16) * N + 8);
-      const s = samples[i % N];
       const side = k % 2 ? 1 : -1;
+      const i = nearestOpen(Math.floor((k / 16) * N + 8) % N, side, 26);
+      if (i < 0) continue;                  // walled in for a long way: skip it
+      const s = samples[i % N];
       const off = halfW + kerbW + 5 + rng() * 16;
       const x = s.x + (-s.tz) * side * off, z = s.z + s.tx * side * off;
       if (minRoadDistLite(x, z) < halfW + 3) continue;
