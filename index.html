@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kart Rush</title>
+<link rel="stylesheet" href="style.css">
+<script type="importmap">
+{ "imports": { "three": "./js/vendor/three.module.js" } }
+</script>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="vignette"></div>
+
+<div id="ui">
+
+  <!-- in-race HUD -->
+  <div id="hud" class="screen hidden">
+    <div id="lapPanel" class="panel">
+      <div class="row"><span class="label">LAP</span><span id="lapNum">1/3</span></div>
+      <div id="raceTime">0'00"000</div>
+    </div>
+    <div id="posPanel" class="panel">
+      <span id="posNum">6</span><span id="posSuf">th</span>
+    </div>
+    <div id="itemSlot" class="panel"><canvas id="itemIcon" width="76" height="76"></canvas></div>
+    <div id="coinHud" class="panel">🪙 <span id="coinCount">0</span></div>
+    <canvas id="minimap" width="180" height="180"></canvas>
+    <canvas id="speedo" width="160" height="160"></canvas>
+    <div id="driftbar"><div id="driftfill"></div></div>
+    <div id="centerMsg"></div>
+    <div id="lapTimeMsg"></div>
+    <div id="wrongway" class="hidden">WRONG WAY</div>
+    <div id="countdown" class="hidden"></div>
+  </div>
+
+  <!-- main menu -->
+  <div id="menu" class="screen hidden">
+    <h1 id="title">KART RUSH</h1>
+    <div id="subtitle">grand prix</div>
+    <div id="menuRows">
+      <div class="menuRow" data-row="0">
+        <span class="rowLabel">MODE</span>
+        <span class="arrow" data-dir="-1">◀</span>
+        <span class="rowValue" id="mMode">Single Race</span>
+        <span class="arrow" data-dir="1">▶</span>
+      </div>
+      <div class="menuRow" data-row="1">
+        <span class="rowLabel">TRACK</span>
+        <span class="arrow" data-dir="-1">◀</span>
+        <span class="rowValue" id="mTrack">Sunset Circuit</span>
+        <span class="arrow" data-dir="1">▶</span>
+      </div>
+      <div class="menuRow" data-row="2">
+        <span class="rowLabel">RIVALS</span>
+        <span class="arrow" data-dir="-1">◀</span>
+        <span class="rowValue" id="mDiff">Rival</span>
+        <span class="arrow" data-dir="1">▶</span>
+      </div>
+      <div class="menuRow" data-row="3">
+        <span class="rowLabel">GARAGE</span>
+        <span class="rowValue" id="mGarage">🪙 0</span>
+      </div>
+      <div class="menuRow" data-row="4">
+        <span class="rowLabel">TRACK LAB</span>
+        <span class="rowValue">build your own circuit</span>
+      </div>
+      <div class="menuRow start" data-row="5"><span class="rowValue" id="mStart">START RACE</span></div>
+    </div>
+    <div id="mBest">Best lap —</div>
+    <div id="menuHelp">
+      ↑↓ select · ←→ change · Enter start<br>
+      drive: <b>↑/W</b> gas · <b>↓/S</b> brake · <b>←→/AD</b> steer · <b>Shift</b> hop/drift · <b>Space</b> item · <b>C</b> look back · <b>M</b> mute · <b>Esc</b> pause<br>
+      rev the gas on the last beat of the countdown for a rocket start
+    </div>
+  </div>
+
+  <!-- character select -->
+  <div id="charSel" class="screen hidden">
+    <h2 id="charSelTitle">CHOOSE YOUR RACER</h2>
+    <div id="charCard">
+      <span id="charPrev" class="bigArrow">◀</span>
+      <div id="charInfo">
+        <div id="charName">Dash</div>
+        <div id="charTag">All-rounder</div>
+      </div>
+      <span id="charNext" class="bigArrow">▶</span>
+    </div>
+    <div id="charStats">
+      <div class="statRow"><span>SPEED</span><div class="statBar"><div id="stSpeed" class="statFill"></div></div></div>
+      <div class="statRow"><span>ACCEL</span><div class="statBar"><div id="stAccel" class="statFill"></div></div></div>
+      <div class="statRow"><span>HANDLING</span><div class="statBar"><div id="stSteer" class="statFill"></div></div></div>
+      <div class="statRow"><span>WEIGHT</span><div class="statBar"><div id="stMass" class="statFill"></div></div></div>
+    </div>
+    <div id="charGo" class="menuRow start sel"><span class="rowValue">LET'S RACE</span></div>
+    <div id="charHelp">←→ choose · Enter race · Esc back</div>
+  </div>
+
+  <!-- track lab -->
+  <div id="editorScreen" class="screen hidden">
+    <h2 id="editorTitle">TRACK LAB</h2>
+    <div id="edMain">
+      <canvas id="edCanvas" width="520" height="520"></canvas>
+      <div id="edSide">
+        <div class="edRow">
+          <span class="edLabel">THEME</span>
+          <span class="arrow" id="edThemePrev">◀</span>
+          <span class="edValue" id="edTheme">Sunset</span>
+          <span class="arrow" id="edThemeNext">▶</span>
+        </div>
+        <div class="edRow">
+          <span class="edLabel">HILLS</span>
+          <span class="arrow" id="edHillPrev">◀</span>
+          <span class="edValue" id="edHill">Rolling</span>
+          <span class="arrow" id="edHillNext">▶</span>
+        </div>
+        <div class="edBtn" id="edRandom">🎲 RANDOMIZE</div>
+        <div class="edBtn primary" id="edTest">🏁 RACE IT</div>
+        <div class="edHint">drag points to shape the road<br>double-click road: add a point<br>double-click a point: remove it</div>
+      </div>
+    </div>
+    <div id="editorHelp"><b>Esc</b> back · your track saves automatically and appears in the TRACK list</div>
+  </div>
+
+  <!-- garage -->
+  <div id="garage" class="screen hidden">
+    <h2 id="garageTitle">GARAGE</h2>
+    <div id="gCoins">🪙 0</div>
+    <div id="gRows"></div>
+    <div id="garageHelp">↑↓ part · ←→ option · Enter buy / equip · Esc back</div>
+  </div>
+
+  <!-- pause -->
+  <div id="pauseMenu" class="screen hidden">
+    <h2>PAUSED</h2>
+    <div class="pauseRow" data-row="0">RESUME</div>
+    <div class="pauseRow" data-row="1">RESTART RACE</div>
+    <div class="pauseRow" data-row="2">QUIT TO MENU</div>
+  </div>
+
+  <!-- results -->
+  <div id="resultsScreen" class="screen hidden">
+    <h2 id="resultsTitle">FINISHED</h2>
+    <div id="resultsSub"></div>
+    <div id="resultsTable"></div>
+    <div id="cupStandings" class="hidden"></div>
+    <div id="resultsHelp"><b>Enter</b> race again · <b>Esc</b> menu</div>
+  </div>
+
+  <!-- podium -->
+  <div id="podiumScreen" class="screen hidden">
+    <h2 id="podiumTitle">CUP CHAMPION</h2>
+    <div id="podiumName">Dash</div>
+    <div id="podiumTable"></div>
+    <div id="podiumHelp"><b>Enter</b> back to menu</div>
+  </div>
+
+  <div id="loading">building track…</div>
+</div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
