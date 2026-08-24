@@ -1333,21 +1333,36 @@ function updateHazards(dt) {
     s.sHint = q.sIdx;
     s.groundY = q.groundY;
 
-    // The same barrier the karts hit, for the same reason: a green shell
-    // ricochets where there is a wall to ricochet off, and flies away down the
-    // open sections instead of skipping along an invisible one.
-    const face = track.railLat - SHELL_RADIUS;
+    // The same barrier the karts hit: a shell ricochets where there is a wall
+    // to ricochet off, and flies away down the open sections instead of
+    // skipping along an invisible one.
+    //
+    // The barrier stands a little way beyond the kerb, so the ground directly
+    // in front of it is off-road. A shell has to be allowed to cross that strip
+    // — culling it there for leaving the road is what made shells vanish into
+    // the barrier instead of bouncing off it.
     const bit = q.lat < 0 ? track.RAIL_NEG : track.RAIL_POS;
-    if (s.kind === 'green' && Math.abs(q.lat) > face && (track.railAt[q.sIdx] & bit)) {
+    const walled = (track.railAt[q.sIdx] & bit) !== 0;
+    const past = Math.abs(q.lat) - (track.railLat - SHELL_RADIUS);
+
+    if (walled && past > 3) {
+      // Behind the barrier: it came round the end of one through a gap, and is
+      // out of play. Bouncing it here would fire it back through the wall.
+      scene.remove(s.mesh); G.shells.splice(i, 1); continue;
+    }
+    if (walled && past > 0) {
       // mirror the heading across the track tangent
       const tA = Math.atan2(q.tz, q.tx);
       s.angle = angNorm(2 * tA - s.angle);
-      const push = (Math.abs(q.lat) - face) * Math.sign(q.lat);
+      const push = past * Math.sign(q.lat);
       s.x -= (-q.tz) * push;
       s.z -= q.tx * push;
       s.bounces = (s.bounces || 0) + 1;
-      if (s.bounces > 6) { scene.remove(s.mesh); G.shells.splice(i, 1); continue; }
-    } else if (!q.onRoad && s.life < 8.4) {
+      // A green shell ricochets until it runs out of patience; a red one is
+      // held to its own lifetime, since it re-acquires its target after every
+      // deflection and should not be cheaper to survive for bouncing.
+      if (s.kind === 'green' && s.bounces > 6) { scene.remove(s.mesh); G.shells.splice(i, 1); continue; }
+    } else if (!walled && !q.onRoad && s.life < 8.4) {
       scene.remove(s.mesh); G.shells.splice(i, 1); continue;
     }
 
