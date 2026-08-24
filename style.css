@@ -404,8 +404,17 @@ html, body {
 }
 
 /* the thumb zone is invisible: the whole lower-left quadrant steers */
+/* Sized for a thumb, not for the screen: 46% of a wide landscape phone is over
+   400px, which reaches the middle of the frame and swallows space the HUD
+   needs. The cap keeps portrait unchanged and pulls the edge back on wide
+   viewports. */
+/* Sized for a thumb, not for the screen. 46% of a wide landscape phone reaches
+   the middle of the frame, and 74% of a tall one puts the top of the stick up
+   among the HUD — the stick is drawn centred on the touch, so it extends 61px
+   above wherever the thumb lands. Both bounds are what keep it off the minimap. */
 #tSteerZone {
-  position: absolute; left: 0; bottom: 0; width: 46%; height: 74%;
+  position: absolute; left: 0; bottom: 0;
+  width: min(46%, 300px); height: 40%;
   pointer-events: auto; touch-action: none;
 }
 
@@ -489,8 +498,37 @@ html, body {
 
 body.touch { overscroll-behavior: none; touch-action: none; }
 body.touch #speedo { display: none; }                 /* the cluster owns that corner */
-body.touch #minimap { width: 108px; height: 108px; left: 12px; bottom: 12px; opacity: 0.8; }
-body.touch #driftbar { bottom: calc(18px + env(safe-area-inset-bottom)); width: 190px; }
+/* The lower-left belongs to the steering thumb, so the minimap cannot live
+   there — the floating stick lands directly on top of it. Both it and the
+   drift bar move to the top centre, under the item slot, which is the one
+   band no thumb ever covers. */
+body.touch #minimap {
+  left: 50%; transform: translateX(-50%);
+  /* below the item slot at its popped size, not its resting size: the slot
+     scales to 1.3 when an item lands */
+  top: calc(100px + env(safe-area-inset-top));
+  bottom: auto;
+  width: 92px; height: 92px;
+  opacity: 1;
+  /* a thin white line over a bright sky washes out — give it something to sit on */
+  background: rgba(8, 10, 22, 0.45);
+  border: 1px solid var(--panel-line);
+  border-radius: 14px;
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+
+/* The centre messages sit at 26-33% of the height, which is exactly where the
+   minimap now lives. Push them below the drift bar so a LAP or SLIPSTREAM
+   banner never lands on top of it. */
+body.touch #centerMsg { top: calc(232px + env(safe-area-inset-top)); }
+body.touch #lapTimeMsg { top: calc(288px + env(safe-area-inset-top)); }
+body.touch #wrongway { top: calc(232px + env(safe-area-inset-top)); }
+body.touch #driftbar {
+  left: 50%; transform: translateX(-50%);
+  top: calc(200px + env(safe-area-inset-top));
+  bottom: auto;
+  width: 150px;
+}
 body.touch #menuHelp { display: none; }
 #touchHelp { display: none; }
 body.touch #touchHelp {
@@ -645,6 +683,11 @@ body.touch #editorHelp, body.touch #resultsHelp, body.touch #podiumHelp { displa
 
   .backBtn { top: 8px; left: 8px; padding: 5px 11px; font-size: 12px; }
   #tTop { flex-direction: row; top: calc(62px + env(safe-area-inset-top)); }
+  body.touch #minimap { top: calc(100px + env(safe-area-inset-top)); width: 68px; height: 68px; }
+  body.touch #driftbar { top: calc(176px + env(safe-area-inset-top)); width: 120px; }
+  body.touch #centerMsg { top: calc(200px + env(safe-area-inset-top)); }
+  body.touch #lapTimeMsg { top: calc(240px + env(safe-area-inset-top)); }
+  body.touch #wrongway { top: calc(200px + env(safe-area-inset-top)); }
 }
 
 /* the countdown's pop animation scales past the viewport; clip it there rather

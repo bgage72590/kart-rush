@@ -31,7 +31,7 @@ const SCALED = [
 // mean thousands of loads and multiplies a second for six fixed numbers.
 function makeTune(cls) {
   const k = cls.speed;
-  const t = { skill: cls.skill, band: cls.band };
+  const t = { skill: cls.skill, band: cls.band, corner: cls.corner };
   for (const key of SCALED) {
     const base = CFG[key];
     // A renamed or misspelled key would otherwise yield NaN and poison every
@@ -1029,7 +1029,10 @@ function aiControls(r, dt) {
     wps[(r.wpIdx + 2) % n].curve,
     wps[(r.wpIdx + 4) % n].curve,
     wps[(r.wpIdx + 6) % n].curve);
-  const cornerSpeed = T.topSpeed * clamp(1.06 - curveAhead * 1.15, 0.55, 1);
+  // How much of the corner the AI is willing to take. This is the only dial
+  // that moves its pace: it is corner-limited, so its straight-line speed cap
+  // is almost never what is holding it back.
+  const cornerSpeed = T.topSpeed * clamp(1.06 - curveAhead * 1.15, 0.55, 1) * T.corner;
   const brake = r.speed > cornerSpeed * 1.12;
   const coast = r.speed > cornerSpeed;
 
@@ -1068,7 +1071,7 @@ function aiControls(r, dt) {
     steer,
     gas: !coast,
     brake,
-    drift: Math.abs(steer) > 0.72 && r.speed > T.aiDriftGate && T.skill > 0.9,
+    drift: Math.abs(steer) > 0.45 && r.speed > T.aiDriftGate && T.skill > 0.9,
     item: useIt,
   };
 }

@@ -38,7 +38,9 @@ then open <http://localhost:8123>. (ES modules need a server — double-clicking
   kart, the AI and the projectiles alike — so the difficulty is that corners
   arrive sooner, not that the field got a secret buff. All three are unlocked
   from the start, and records are kept per class because a 150cc lap would
-  otherwise beat every 50cc lap forever.
+  otherwise beat every 50cc lap forever. The AI commits harder to corners in
+  the slower classes, since a human makes far fewer mistakes at 50cc and a
+  cautious field there is a walkover.
 - **Progression**: coins on the track + race payouts fund garage upgrades
   (engine/tires/spoiler, each visible on the kart) and paint jobs.
 - Drifting with two-tier mini-turbos, jump ramps with air tricks, boost pads,
