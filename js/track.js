@@ -81,7 +81,10 @@ export function buildTrackFromDef(def, key) {
   const length = cum + Math.hypot(raw[0][0] - raw[N - 1][0], raw[0][2] - raw[N - 1][2]);
   for (let i = 0; i < N; i++) {
     const a = samples[(i - 2 + N) % N], b = samples[(i + 2) % N];
-    samples[i].curve = Math.abs(angNorm(Math.atan2(b.tz, b.tx) - Math.atan2(a.tz, a.tx)));
+    // signed: positive bends toward +lat, so the inside of the corner is +lat
+    const d = angNorm(Math.atan2(b.tz, b.tx) - Math.atan2(a.tz, a.tx));
+    samples[i].bend = d;
+    samples[i].curve = Math.abs(d);
   }
 
   // --- heightfield -------------------------------------------------------------
@@ -328,7 +331,8 @@ export function buildTrackFromDef(def, key) {
     gate.position.set(s2.x, s2.y, s2.z);
     gate.rotation.y = -Math.atan2(s2.tz, s2.tx);
     const postMat = new THREE.MeshStandardMaterial({ color: 0x8b93a4, roughness: 0.5, metalness: 0.4 });
-    for (const zz of [halfW + 2.4, -halfW - 2.4]) {
+    const gateLeg = halfW + kerbW + 3.0;        // clear of the barrier line
+    for (const zz of [gateLeg, -gateLeg]) {
       const post = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.62, 15, 10), postMat);
       post.position.set(0, 7.5, zz);
       gate.add(post);
@@ -348,7 +352,7 @@ export function buildTrackFromDef(def, key) {
     const bmat = new THREE.MeshBasicMaterial({ map: btex });
     const bside = new THREE.MeshStandardMaterial({ color: 0x141826 });
     const banner = new THREE.Mesh(
-      new THREE.BoxGeometry(1.1, 3.4, (halfW + 2.4) * 2 + 1),
+      new THREE.BoxGeometry(1.1, 3.4, gateLeg * 2 + 1),
       [bmat, bmat, bside, bside, bside, bside]
     );
     // box depth spans the road, so its ±X faces already look up/down the track
@@ -442,6 +446,38 @@ export function buildTrackFromDef(def, key) {
     return Math.sqrt(best);
   };
 
+  // --- barriers -----------------------------------------------------------------
+  // Where the track is walled, decided once and used by everything: the mesh
+  // below is built from it, karts are stopped by it, and shells bounce off it.
+  // A barrier you can see but drive through was the bug this replaced, so the
+  // rule has to live in exactly one place.
+  //
+  // Corners get a barrier; straights are left open, which is where run-off,
+  // shortcuts and the off-road hazards still live.
+  const railLat = halfW + kerbW + 1.5;
+  const RAIL_NEG = 1, RAIL_POS = 2;
+  const spacing = length / N;
+  const railAt = new Uint8Array(N);
+  for (let i = 0; i < N; i++) {
+    const sm = samples[i];
+    if (sm.curve < 0.05) continue;
+    // On a corner tight enough that the inside barrier would pinch into itself,
+    // there is no room for one — leave that side open.
+    const radius = (4 * spacing) / sm.curve;
+    const inside = sm.bend > 0 ? RAIL_POS : RAIL_NEG;
+    railAt[i] = RAIL_NEG | RAIL_POS;
+    if (radius < railLat + 4) railAt[i] &= ~inside;
+  }
+
+  // Open the barrier for `halfLen` world units either side of a sample, on one
+  // side of the road. A hazard behind a wall is scenery; a gap in the wall is a
+  // warning that something is out there.
+  function openRail(i, halfLen, side) {
+    const span = Math.ceil(halfLen / spacing);
+    const bit = side < 0 ? RAIL_NEG : RAIL_POS;
+    for (let k = -span; k <= span; k++) railAt[((i + k) % N + N) % N] &= ~bit;
+  }
+
   // --- themed hazards -------------------------------------------------------------
 
   const lavaPools = [], geysers = [], icePatches = [], snowmen = [];
@@ -466,6 +502,7 @@ export function buildTrackFromDef(def, key) {
       disc.position.set(x, y + 0.14, z);
       group.add(rim); group.add(disc);
       lavaPools.push({ x, z, r });
+      openRail(i % N, r + 8, side);
     }
     const gMat = new THREE.MeshBasicMaterial({ color: 0xff8a40, transparent: true, opacity: 0.85 });
     for (let k = 0; k < 5; k++) {
@@ -709,7 +746,9 @@ export function buildTrackFromDef(def, key) {
   {
     const parts = [];
     const drng = mulberry32(def.seed ^ 0xd3c0);
-    const railGeo = new THREE.BoxGeometry(6.2, 1.05, 0.45);
+    // unit-length along X: each barrier segment is stretched to bridge exactly
+    // the gap it spans, so the wall has no holes to drive through
+    const railGeo = new THREE.BoxGeometry(1, 1.05, 0.45);
     const postGeo = new THREE.BoxGeometry(0.3, 1.5, 0.3);
     const poleGeo = new THREE.CylinderGeometry(0.14, 0.18, 7.5, 6);
     const flagGeo = new THREE.BoxGeometry(2.5, 1.5, 0.09);
@@ -719,26 +758,55 @@ export function buildTrackFromDef(def, key) {
     const railWarn = new THREE.Color(0xe23c34);
 
     const lateral = (sm, lat) => [sm.x + (-sm.tz) * lat, sm.z + sm.tx * lat];
-    const railLat = halfW + kerbW + 1.5;
 
-    // guard rails hug the corners
-    for (let i = 0; i < N; i += 2) {
+    // Build the barrier by walking its own line, not the centreline. The
+    // outside of a corner is a longer arc than the road it follows, so evenly
+    // spaced segments of a fixed length leave gaps exactly where the wall
+    // matters most. Bridging point to point instead means what you can see is
+    // what you can hit — which is the whole contract `railAt` exists to keep.
+    const RAIL_STEP = 2;
+    const railPoint = (i, side) => {
       const sm = samples[i];
-      if (sm.curve < 0.05) continue;
-      const yaw = -Math.atan2(sm.tz, sm.tx);
-      for (const side of [-1, 1]) {
-        const [bx, bz] = lateral(sm, side * railLat);
-        const by = sm.y + LIFT;
-        const alt = (i >> 1) % 2 === 0;
-        parts.push({
-          geometry: railGeo, matrix: mat4(bx, by + 1.0, bz, yaw),
-          color: alt ? railCol : railWarn,
-          ao: { base: by, height: 1.6, dark: 0.45 },
-        });
-        parts.push({
-          geometry: postGeo, matrix: mat4(bx, by + 0.75, bz, yaw),
-          color: 0x6b7280, ao: { base: by, height: 1.6, dark: 0.4 },
-        });
+      const [bx, bz] = lateral(sm, side * railLat);
+      return [bx, sm.y + LIFT, bz];
+    };
+    const bridge = (a, b, alt) => {
+      const dx = b[0] - a[0], dz = b[2] - a[2];
+      const len = Math.hypot(dx, dz);
+      if (len < 0.01) return;
+      const by = Math.min(a[1], b[1]);
+      const m = new THREE.Matrix4().compose(
+        new THREE.Vector3((a[0] + b[0]) / 2, (a[1] + b[1]) / 2 + 1.0, (a[2] + b[2]) / 2),
+        new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.atan2(dz, dx)),
+        new THREE.Vector3(len + 0.06, 1, 1));
+      parts.push({
+        geometry: railGeo, matrix: m,
+        color: alt ? railCol : railWarn,
+        ao: { base: by, height: 1.6, dark: 0.45 },
+      });
+    };
+
+    for (const side of [-1, 1]) {
+      const bit = side < 0 ? RAIL_NEG : RAIL_POS;
+      const on = (i) => (railAt[((i % N) + N) % N] & bit) !== 0;
+      for (let i = 0; i < N; i++) {
+        if (!on(i) || on(i - 1)) continue;          // start of a contiguous run
+        let end = i;
+        while (end - i < N && on(end + 1)) end++;
+        let prev = railPoint(i % N, side);
+        for (let j = i; j < end; j += RAIL_STEP) {
+          const k = Math.min(j + RAIL_STEP, end);
+          const cur = railPoint(k % N, side);
+          bridge(prev, cur, ((j - i) / RAIL_STEP) % 2 === 0);
+          prev = cur;
+          const sm = samples[k % N];
+          parts.push({
+            geometry: postGeo,
+            matrix: mat4(cur[0], cur[1] + 0.75, cur[2], -Math.atan2(sm.tz, sm.tx)),
+            color: 0x6b7280, ao: { base: cur[1], height: 1.6, dark: 0.4 },
+          });
+        }
+        i = end;
       }
     }
 
@@ -1028,8 +1096,9 @@ export function buildTrackFromDef(def, key) {
     lavaPools, geysers, icePatches, snowmen,
     minimap, worldToMap,
     halfW, kerbW,
+    railLat, railAt, RAIL_NEG, RAIL_POS,
     startPose: { x: samples[0].x, z: samples[0].z, angle: startAngle },
-    spacing: length / N,
+    spacing,
   };
   cache[key] = track;
   return track;

@@ -12,6 +12,10 @@ import { ParticlePool, SkidMarks, softDotTexture } from './fx.js';
 import { Garage } from './garage.js';
 import * as Store from './store.js';
 
+// A shell's own half-width, so it ricochets off the face of the barrier rather
+// than from wherever its centre happens to be.
+const SHELL_RADIUS = 1.2;
+
 // CFG values that scale with the engine class: speeds, and distances that
 // should preserve the same time window at any speed. Declared once, so adding
 // a scaled constant is a CFG entry plus a name here.
@@ -315,6 +319,7 @@ function makeRacer(id, charIdx, isPlayer, track, gridSlot) {
     groundY: s.y + CFG.roadLift,
     pitch: 0, roll: 0, steerVis: 0,
     offTrack: 0,
+    wallOut: -1, behindWall: false,
     q: null,
     _skidL: null, _skidR: null,
     aiGrade: 1,
@@ -864,6 +869,11 @@ function driveRacer(r, c, dt) {
       r.z += Math.sin(r.angle) * r.speed * dt;
       r.q = track.query(r.x, r.z, r.sHint);
       r.sHint = r.q.sIdx;
+      // A kart clears the barrier in the air, so record where it is relative to
+      // the wall without acting on it — otherwise landing outside one reads as
+      // having come through it, and it gets snapped back in.
+      r.wallOut = barrierOut(track, r.q);
+      r.behindWall = false;              // in the air, not stranded
       r.hopZ = r.airY;
       if (r.boost > 0) r.boost -= dt;
       if (r.star > 0) r.star -= dt;
@@ -967,9 +977,10 @@ function driveRacer(r, c, dt) {
     r.speed *= 0.35;
   }
 
-  // track query + ground follow
+  // track query + barrier + ground follow
   r.q = track.query(r.x, r.z, r.sHint);
   r.sHint = r.q.sIdx;
+  hitBarrier(r);
   r.offTrack = r.q.onRoad ? 0 : r.q.dist;
   r.groundY += (r.q.groundY - r.groundY) * Math.min(1, dt * 14);
 
@@ -997,6 +1008,81 @@ function driveRacer(r, c, dt) {
         if (r.isPlayer) Sound.sweep(300, 700, 0.25, 0.1);
         break;
       }
+    }
+  }
+}
+
+// --- barriers -------------------------------------------------------------------
+
+// How far past the barrier face the kart's centre has strayed. Negative while
+// it is still clear of the wall.
+function barrierOut(track, q) {
+  return Math.abs(q.lat) - (track.railLat - CFG.kartRadius);
+}
+
+// The barrier is the track's, not the kart's: `railAt` says where a wall stands
+// and `railLat` says how far out it is, and the mesh you can see is built from
+// the same two. A kart that reaches it gets turned along it and scrubs speed
+// rather than driving through the thing in front of it.
+function hitBarrier(r) {
+  const track = G.track;
+  const q = r.q;
+  const out = barrierOut(track, q);
+  r.behindWall = false;
+  if (out <= 0) { r.wallOut = out; return; }
+
+  const side = q.lat < 0 ? -1 : 1;
+  const bit = side < 0 ? track.RAIL_NEG : track.RAIL_POS;
+  if (!(track.railAt[q.sIdx] & bit)) { r.wallOut = out; return; }   // open here
+  // Already outside when the wall began, so it came round the end of one rather
+  // than through it. Shoving it back would be a teleport; instead mark it out
+  // of bounds and let the rescue pick it up.
+  if (r.wallOut > 0.6) { r.wallOut = out; r.behindWall = true; return; }
+
+  const nx = -q.tz * side, nz = q.tx * side;          // outward wall normal
+  r.x -= nx * out;
+  r.z -= nz * out;
+  r.wallOut = 0;
+  // The kart moved, so everything downstream that reads the query — off-track
+  // distance, boost pads, ramps — has to be reading where it actually is.
+  r.q = track.query(r.x, r.z, r.sHint);
+  r.sHint = r.q.sIdx;
+
+  // Resolve in velocity space rather than off the heading, so backing into a
+  // wall behaves the same as driving into one.
+  const vx = Math.cos(r.angle) * r.speed, vz = Math.sin(r.angle) * r.speed;
+  const into = vx * nx + vz * nz;
+  if (into <= 0) return;                               // already running away
+
+  // Keep the run along the wall, drop the run into it: a glancing scrape barely
+  // costs anything, a square hit stops you dead. `square` is how head-on the
+  // contact was, 0 for a graze and 1 for a wall you drove straight at.
+  const ax = vx - nx * into, az = vz - nz * into;
+  const along = Math.hypot(ax, az);
+  const before = Math.abs(r.speed);
+  const square = before > 1e-4 ? into / before : 0;
+  const sgn = r.speed < 0 ? -1 : 1;
+  // Deflect toward the wall's line, but only as far as the contact earns it: a
+  // graze steers you along the barrier, a square hit stops you nose-in rather
+  // than spinning the kart round for you.
+  if (along > 1e-4) {
+    const want = Math.atan2(az * sgn / along, ax * sgn / along);
+    r.angle = angNorm(r.angle + angNorm(want - r.angle) * (1 - square));
+  }
+  r.speed = sgn * along * (1 - 0.25 * square);         // plus a little scrub
+  if (square > 0.45) { r.drift = 0; r.driftCharge = 0; r.driftReady = false; }
+
+  const impact = before * square;
+  if (impact > 6) {
+    const [cx, cz] = [r.x + nx * CFG.kartRadius, r.z + nz * CFG.kartRadius];
+    for (let k = 0; k < (impact > 30 ? 5 : 2); k++) {
+      sparkPool.emit(cx, r.groundY + 0.7, cz,
+        -nx * 6 + (Math.random() - 0.5) * 8, 2 + Math.random() * 5, -nz * 6 + (Math.random() - 0.5) * 8,
+        0.28, 1, 0.85, 0.45);
+    }
+    if (r.isPlayer) {
+      G.cam.shake = Math.max(G.cam.shake, Math.min(0.75, impact / 60));
+      if (impact > 18 && Math.random() < 0.6) Sound.bump();
     }
   }
 }
@@ -1082,6 +1168,8 @@ function collideKarts() {
   for (let i = 0; i < G.racers.length; i++) {
     for (let j = i + 1; j < G.racers.length; j++) {
       const a = G.racers[i], b = G.racers[j];
+      // one of them is in the air over the other: no contact
+      if (Math.abs((a.airY || 0) - (b.airY || 0)) > 2.4) continue;
       const dx = b.x - a.x, dz = b.z - a.z;
       const d = Math.hypot(dx, dz);
       const min = CFG.kartRadius * 2;
@@ -1095,8 +1183,12 @@ function collideKarts() {
       if (a.star > 0 && b.star <= 0) hitRacer(b, true);
       else if (b.star > 0 && a.star <= 0) hitRacer(a, true);
       else {
+        // Equal and opposite, so a pack cannot manufacture speed out of
+        // contact. Same mass ratio the positional shove above uses, doubled so
+        // two equal karts trade exactly `swap` as they always did.
         const swap = (a.speed - b.speed) * 0.25;
-        a.speed -= swap * (mb / ma); b.speed += swap * (ma / mb);
+        a.speed -= swap * 2 * mb / (ma + mb);
+        b.speed += swap * 2 * ma / (ma + mb);
         if ((a.isPlayer || b.isPlayer) && Math.abs(swap) > 1.2) {
           if (Math.random() < 0.4) Sound.bump();
           G.cam.shake = Math.max(G.cam.shake, 0.3);
@@ -1144,20 +1236,22 @@ function updateHazards(dt) {
     s.sHint = q.sIdx;
     s.groundY = q.groundY;
 
-    if (!q.onRoad) {
-      if (s.kind === 'green') {
-        // bounce off the road edge: mirror the heading across the track tangent
-        const tA = Math.atan2(q.tz, q.tx);
-        s.angle = angNorm(2 * tA - s.angle);
-        // nudge back toward the centreline
-        const push = (Math.abs(q.lat) - (track.halfW + track.kerbW - 1)) * Math.sign(q.lat);
-        s.x -= (-q.tz) * push;
-        s.z -= q.tx * push;
-        s.bounces = (s.bounces || 0) + 1;
-        if (s.bounces > 6) { scene.remove(s.mesh); G.shells.splice(i, 1); continue; }
-      } else if (s.life < 8.4) {
-        scene.remove(s.mesh); G.shells.splice(i, 1); continue;
-      }
+    // The same barrier the karts hit, for the same reason: a green shell
+    // ricochets where there is a wall to ricochet off, and flies away down the
+    // open sections instead of skipping along an invisible one.
+    const face = track.railLat - SHELL_RADIUS;
+    const bit = q.lat < 0 ? track.RAIL_NEG : track.RAIL_POS;
+    if (s.kind === 'green' && Math.abs(q.lat) > face && (track.railAt[q.sIdx] & bit)) {
+      // mirror the heading across the track tangent
+      const tA = Math.atan2(q.tz, q.tx);
+      s.angle = angNorm(2 * tA - s.angle);
+      const push = (Math.abs(q.lat) - face) * Math.sign(q.lat);
+      s.x -= (-q.tz) * push;
+      s.z -= q.tx * push;
+      s.bounces = (s.bounces || 0) + 1;
+      if (s.bounces > 6) { scene.remove(s.mesh); G.shells.splice(i, 1); continue; }
+    } else if (!q.onRoad && s.life < 8.4) {
+      scene.remove(s.mesh); G.shells.splice(i, 1); continue;
     }
 
     let hit = false;
@@ -1247,7 +1341,7 @@ function updateHazards(dt) {
   for (const sm of track.snowmen) {
     if (!sm.alive) continue;
     for (const r of G.racers) {
-      if (r.finished) continue;
+      if (r.finished || r.airY > 3.2) continue;      // cleared it in the air
       if (Math.hypot(r.x - sm.x, r.z - sm.z) < 2.7) {
         sm.alive = false;
         sm.group.visible = false;
@@ -1356,8 +1450,8 @@ export function stepRace(dt) {
       if (r.forceRescue <= 0) r.respawn = 99;
     }
 
-    // rescue if hopelessly far off the track
-    if (r.offTrack > 60 || r.respawn > 90) {
+    // rescue if hopelessly far off the track, or stranded behind a barrier
+    if (r.offTrack > 60 || r.respawn > 90 || r.behindWall) {
       r.respawn += dt;
       if (r.respawn > 1.4) {
         const w = G.track.wps[r.wpIdx];
@@ -1371,6 +1465,8 @@ export function stepRace(dt) {
         r.q = G.track.query(r.x, r.z, w.sIdx);
         r.sHint = r.q.sIdx;
         r.groundY = r.q.groundY;
+        r.wallOut = barrierOut(G.track, r.q);
+        r.behindWall = false;
         if (r.isPlayer) showMsg('BACK ON TRACK', 1.2);
       }
     } else r.respawn = 0;
