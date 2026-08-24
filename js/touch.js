@@ -28,7 +28,9 @@ export const touch = {
 const $ = (id) => document.getElementById(id);
 
 const STEER_TRAVEL = 80;      // px of thumb travel for full lock
-const KNOB_TRAVEL = 44;       // px the visual knob is allowed to move
+// Ring radius 61 minus knob radius 27: any more and the knob rides outside the
+// ring at full lock. Keep in step with #tStick / #tKnob in the stylesheet.
+const KNOB_TRAVEL = 34;       // px the visual knob is allowed to move
 const STEER_EXPO = 1.6;       // >1 softens small corrections, keeps full lock
 const STEER_DEAD = 0.05;      // ignore thumb tremor around centre
 
@@ -61,7 +63,7 @@ function releaseAll() {
   touch._itemEdge = false;
   steerId = -1;
   if (els) {
-    els.knob.style.transform = 'translate(-50%, -50%)';
+    els.knob.style.transform = 'translateX(0)';
     els.stick.classList.remove('on');
     for (const b of els.buttons) b.el.classList.remove('on');
   }
@@ -112,8 +114,7 @@ function steerTo(clientX) {
   const raw = clamp((clientX - steerOriginX) / STEER_TRAVEL, -1, 1);
   const mag = Math.abs(raw);
   touch.steer = mag < STEER_DEAD ? 0 : Math.sign(raw) * Math.pow(mag, STEER_EXPO);
-  els.knob.style.transform =
-    'translate(calc(-50% + ' + (raw * KNOB_TRAVEL).toFixed(1) + 'px), -50%)';
+  els.knob.style.transform = 'translateX(' + (raw * KNOB_TRAVEL).toFixed(1) + 'px)';
 }
 
 function bindSteer() {
@@ -140,7 +141,7 @@ function bindSteer() {
     steerId = -1;
     touch.steer = 0;
     stick.classList.remove('on');
-    els.knob.style.transform = 'translate(-50%, -50%)';
+    els.knob.style.transform = 'translateX(0)';
   };
   zone.addEventListener('pointerup', up);
   zone.addEventListener('pointercancel', up);
@@ -148,7 +149,7 @@ function bindSteer() {
     steerId = -1;
     touch.steer = 0;
     stick.classList.remove('on');
-    els.knob.style.transform = 'translate(-50%, -50%)';
+    els.knob.style.transform = 'translateX(0)';
   });
 }
 

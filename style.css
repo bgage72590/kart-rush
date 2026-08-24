@@ -639,6 +639,7 @@ body.touch #editorHelp, body.touch #resultsHelp, body.touch #podiumHelp { displa
   .pauseRow { font-size: 17px; padding: 4px 20px; }
 
   .backBtn { top: 8px; left: 8px; padding: 5px 11px; font-size: 12px; }
+  #tTop { flex-direction: row; top: calc(62px + env(safe-area-inset-top)); }
 }
 
 /* the countdown's pop animation scales past the viewport; clip it there rather
