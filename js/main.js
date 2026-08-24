@@ -540,6 +540,78 @@ function enterGarage() {
   renderGarage(garageSel);
   showCharPreview();
   applyGaragePreview();
+  $id('gAdNote').textContent = '';
+  $id('gAdNote').className = '';
+  adTick = 0;
+  updateAdButton();
+}
+
+// --- rewarded ads --------------------------------------------------------------
+// Coins for a watched ad, offered only in the garage — the one screen where
+// coins are already what you are looking at. Never mid-race, and never as a
+// gate on anything: every part is still reachable by racing for it.
+const AD_REWARD = 30;
+const AD_COOLDOWN_MS = 180000;          // three minutes between ads
+const AD_KEY = 'kartrush2.adNext';      // epoch ms at which the next ad unlocks
+let adBusy = false;
+let adTick = 0;
+
+// Persisted rather than kept in memory, so reloading the page is not a way to
+// skip the wait. It rides the same cloud save as everything else.
+function adReadyIn() {
+  const next = parseFloat(Store.get(AD_KEY));
+  if (!isFinite(next)) return 0;
+  return clamp(next - Date.now(), 0, AD_COOLDOWN_MS);
+}
+
+function updateAdButton() {
+  const box = $id('gAd'), btn = $id('gAdBtn');
+  if (!box || !btn) return;
+  // Outside a real Playable there is no ad to serve, and a button that does
+  // nothing is worse than no button at all.
+  if (!Playables.adsAvailable) { box.classList.add('hidden'); return; }
+  box.classList.remove('hidden');
+  const wait = adReadyIn();
+  if (adBusy) {
+    btn.className = 'adBtn busy';
+    btn.textContent = 'LOADING AD…';
+  } else if (wait > 0) {
+    btn.className = 'adBtn cooling';
+    btn.textContent = 'NEXT AD IN ' + Math.ceil(wait / 1000) + 's';
+  } else {
+    btn.className = 'adBtn';
+    btn.innerHTML = '▶&nbsp; WATCH AD — 🪙 ' + AD_REWARD;
+  }
+}
+
+async function watchAd() {
+  if (adBusy || adReadyIn() > 0 || !Playables.adsAvailable) return;
+  const note = $id('gAdNote');
+  adBusy = true;
+  note.className = '';
+  note.textContent = '';
+  updateAdButton();
+  Sound.updateEngine(0, false, 0);
+
+  const res = await Playables.rewarded('garage-coins-' + AD_REWARD);
+
+  adBusy = false;
+  if (res.shown) {
+    // start the cooldown only once an ad has actually been watched, so a
+    // failed or unavailable request does not cost the player their next one
+    Store.set(AD_KEY, String(Date.now() + AD_COOLDOWN_MS));
+    Garage.addCoins(AD_REWARD);
+    if (G.state === 'GARAGE') { renderGarage(garageSel); applyGaragePreview(); }
+    Sound.pickup();
+    note.className = 'good';
+    note.textContent = '+' + AD_REWARD + ' coins';
+  } else {
+    note.className = '';
+    note.textContent = (res.result === 'error' || res.result === 'unavailable')
+      ? 'No ad available right now.'
+      : 'Watch the whole ad to earn the coins.';
+  }
+  updateAdButton();
 }
 
 function applyGaragePreview() {
@@ -719,6 +791,7 @@ bindScreenButtons({
   onPodiumDone: () => exitPodium(),
 });
 initTouch({ onPause: () => togglePause() });
+$id('gAdBtn').addEventListener('click', () => watchAd());
 
 // remember mode/track/rivals/character/mute across visits
 function savePrefs() {
@@ -784,6 +857,8 @@ function frame(now) {
       handleGarage();
       menuCamera(time);
       poseCharPreview(time);
+      adTick -= dt;                      // tick the cooldown label, not every frame
+      if (adTick <= 0) { adTick = 0.5; updateAdButton(); }
       break;
     }
 
@@ -930,6 +1005,7 @@ window.__kr = {
   setAuto: (v) => { G.auto = v; },
   touch, readControls, togglePause, resultsContinue, rig, quality,
   Store, Playables, Sound, onSystemPause, onSystemResume,
+  watchAd, updateAdButton, adReadyIn, AD_REWARD, AD_COOLDOWN_MS, AD_KEY,
   // Pump one frame by hand. Lets a headless harness run whole races
   // deterministically instead of waiting on requestAnimationFrame.
   tick: (ms = 1000 / 60) => frame(last + ms),

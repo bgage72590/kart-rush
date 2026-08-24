@@ -103,8 +103,11 @@ export const Playables = {
   },
 
   // --- ads -------------------------------------------------------------------
-  // Present so the call sites exist and are already guarded. Revenue sharing is
-  // an invite-only pilot, so nothing calls these yet.
+
+  get adsAvailable() {
+    const g = sdk();
+    try { return !!(g && g.ads && g.ads.requestRewardedAd && this.inYouTube); } catch (e) { return false; }
+  },
 
   async interstitial() {
     const g = sdk();
@@ -112,9 +115,31 @@ export const Playables = {
     try { await g.ads.requestInterstitialAd(); return true; } catch (e) { return false; }
   },
 
+  // Resolves { shown, result } and never rejects.
+  //
+  // Only AdResult.SHOWED earns a reward — DISMISSED and REJECTED must not, or
+  // the reward becomes "tap the button and skip". The one genuinely uncertain
+  // case is an SDK that resolves nothing at all: treating that as unwatched
+  // would cheat a player who really did sit through an ad, so it counts only
+  // when the SDK also exposes no AdResult enum to have reported with.
   async rewarded(id) {
     const g = sdk();
-    if (!g || !g.ads || !g.ads.requestRewardedAd) return false;
-    try { await g.ads.requestRewardedAd(id); return true; } catch (e) { return false; }
+    if (!g || !g.ads || !g.ads.requestRewardedAd) {
+      return { shown: false, result: 'unavailable' };
+    }
+    try {
+      const res = await g.ads.requestRewardedAd(id);
+      const AdResult = g.ads.AdResult;
+      let shown;
+      if (AdResult && AdResult.SHOWED !== undefined) {
+        shown = res === AdResult.SHOWED || res === 'SHOWED';
+      } else {
+        shown = res === undefined || res === null ? true : !!res;
+      }
+      return { shown, result: String(res) };
+    } catch (e) {
+      return { shown: false, result: 'error', error: e && e.message };
+    }
   },
 };
+

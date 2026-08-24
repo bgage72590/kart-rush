@@ -101,8 +101,18 @@ through `js/playables.js` is guarded.
   runs before any module reads its slice, with a timeout — a slow or broken
   cloud never holds the game hostage — and keys outside the namespace are
   refused in both directions.
-- **Ads** — the call sites exist and are guarded, but nothing calls them.
-  Revenue sharing is an invite-only pilot.
+- **Rewarded ads** — one offer, in the garage: coins for a watched ad, on a
+  three-minute cooldown that is persisted (so reloading is not a way to skip
+  the wait) and clamped (so a corrupt timestamp cannot lock anyone out). Only
+  `AdResult.SHOWED` pays; dismissing or rejecting earns nothing and does not
+  burn the cooldown. The button only appears inside a real Playable, because a
+  button that cannot serve an ad is worse than no button. Nothing is gated
+  behind it — every part is still reachable by racing.
+- **Interstitials** — the call site exists and is guarded, but nothing calls
+  it. A kart race is a 45-90 second loop and an ad after every one would be
+  hostile.
+
+Revenue sharing is an invite-only pilot, so none of this earns anything yet.
 
 ## Look
 

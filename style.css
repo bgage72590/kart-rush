@@ -662,3 +662,26 @@ body.touch #editorHelp, body.touch #resultsHelp, body.touch #podiumHelp { displa
   animation: hintIn 0.3s ease-out;
 }
 @keyframes hintIn { from { opacity: 0; transform: translate(-50%, -8px); } }
+
+/* ---- rewarded ad (garage) ---- */
+
+#gAd { margin-top: 14px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.adBtn {
+  padding: 11px 26px; border-radius: 12px; cursor: pointer;
+  background: rgba(70, 196, 106, 0.16); border: 1px solid rgba(110, 224, 145, 0.75);
+  color: #8ff0a8; font-size: 16px; font-weight: 800; letter-spacing: 0.5px;
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  transition: background 0.12s, opacity 0.12s;
+}
+.adBtn:hover { background: rgba(70, 196, 106, 0.3); }
+.adBtn.busy, .adBtn.cooling {
+  opacity: 0.5; pointer-events: none;
+  background: rgba(255, 255, 255, 0.07); border-color: var(--panel-line); color: #cfd4e0;
+}
+#gAdNote { font-size: 12px; opacity: 0.75; min-height: 15px; text-shadow: 0 2px 6px rgba(0,0,0,0.8); }
+#gAdNote.good { color: var(--gold); opacity: 1; }
+@media (max-width: 760px), (max-height: 460px) {
+  #gAd { margin-top: 8px; }
+  .adBtn { padding: 8px 18px; font-size: 13px; }
+  #gAdNote { font-size: 11px; }
+}
