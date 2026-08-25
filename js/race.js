@@ -62,6 +62,10 @@ function calibratePace() {
 // time and where going faster reads as skill rather than as a cheat.
 const TOP_SHARE = 0.35;
 
+// Drift yaw against grip yaw. Peak drift rate is this times 1.19, so anything
+// above ~0.84 turns tighter than plain steering does.
+const DRIFT_YAW = 1.05;
+
 // A shell's own half-width, so it ricochets off the face of the barrier rather
 // than from wherever its centre happens to be.
 const SHELL_RADIUS = 1.2;
@@ -1006,7 +1010,13 @@ function driveRacer(r, c, dt) {
       }
       const inward = c.steer * r.drift;
       const rate = steerPower * (0.52 + 0.42 * (inward + 1) / 2 + 0.25);
-      r.angle += r.drift * rate * dt * 0.72;
+      // The trailing factor sets what a drift is worth against simply steering.
+      // It used to be 0.72, which made the peak drift rate 0.857 of plain grip
+      // steering — so the mechanic the game teaches you to use for corners
+      // widened your line by 17% instead of tightening it, and the correct play
+      // on the tightest corner was not to drift. Above 1 it does what it looks
+      // like it does: full inward lock now turns inside what grip alone can.
+      r.angle += r.drift * rate * dt * DRIFT_YAW;
       r.visYaw = angNorm(r.visYaw + angNorm(r.angle + r.drift * 0.5 - r.visYaw) * Math.min(1, dt * 12));
     } else {
       if (r.speed !== 0) {
@@ -1119,10 +1129,18 @@ function hitBarrier(r) {
   const side = q.lat < 0 ? -1 : 1;
   const bit = side < 0 ? track.RAIL_NEG : track.RAIL_POS;
   if (!(track.railAt[q.sIdx] & bit)) { r.wallOut = out; return; }   // open here
-  // Already outside when the wall began, so it came round the end of one rather
-  // than through it. Shoving it back would be a teleport; instead mark it out
-  // of bounds and let the rescue pick it up.
-  if (r.wallOut > 0.6) { r.wallOut = out; r.behindWall = true; return; }
+  // Came round the end of a wall rather than through it. Shoving that back
+  // would be a teleport, so mark it out of bounds and let the rescue take it.
+  //
+  // "Behind the wall" has to mean actually behind it. Testing only the previous
+  // frame's figure caught a kart that had strayed a fraction past the face on
+  // the open run-off and then met the start of a barrier: barely touching it,
+  // well within a nudge of being back on track, and abandoned instead — it
+  // sailed off to four times the road width while the game waited to rescue it.
+  // A correction smaller than the kart is a scrape, not a teleport.
+  if (out > CFG.kartRadius && r.wallOut > 0.6) {
+    r.wallOut = out; r.behindWall = true; return;
+  }
 
   const nx = -q.tz * side, nz = q.tx * side;          // outward wall normal
   r.x -= nx * out;
