@@ -72,6 +72,7 @@ const SHELL_RADIUS = 1.2;
 const SCALED = [
   'topSpeed', 'accel', 'brake', 'revSpeed', 'shellSpeed', 'rampMin',
   'rescueSpeed', 'wrongWayMin', 'grappleRange', 'airLaunch', 'geyserLaunch',
+  'steerPower',
 ];
 
 // Everything the handling model measures against top speed is already written
@@ -99,6 +100,16 @@ function makeTune(cls) {
   // every class at the same distance and the same height — track geometry does
   // not scale, so the jump must not either. Left linear, a 52% speed increase
   // stretched jumps 97% and threw 150cc karts clean past the corner.
+  // `steerPower` is an angular rate, which is why it is easy to miss here, but
+  // it is linear in k for the same reason the speeds are. Turn radius is
+  // speed / turn-rate; leaving the rate fixed while speed scales by k makes the
+  // radius scale by k, on a track whose corners are exactly the same size.
+  // Measured before this was scaled: a minimum radius of 33.9 / 42.4 / 51.7
+  // units at 50 / 100 / 150cc against a tightest corner of 26.1, so at 150cc
+  // the kart could not physically follow the corner — you steered, ran wide,
+  // and hit the wall. Scaling the rate by k cancels k out of speed / rate, so
+  // every class holds the same line and the class decides only how fast it
+  // arrives, which is what an engine class is supposed to mean.
   t.gravity = CFG.gravity * k * k;
   // ...and the barrel roll has to finish inside that shorter hang time.
   t.trickSpin = CFG.trickSpin / k;
@@ -968,7 +979,7 @@ function driveRacer(r, c, dt) {
     r.speed = clamp(r.speed, -T.revSpeed, Math.max(maxSpeed, r.speed));
 
     const sr = r.speed / top;
-    const steerPower = CFG.steerPower * r.stats.steer * r.mods.steer *
+    const steerPower = T.steerPower * r.stats.steer * r.mods.steer *
       (1 - 0.34 * clamp(sr, 0, 1.4)) * (grip < 1 ? 0.85 : 1) *
       (r.slip > 0 ? 0.15 : 1) * (r.onIce ? 0.35 : 1);
 

@@ -24,7 +24,12 @@ export const CFG = {
   geyserLaunch: 15,
   gravity: 40,              // scaled by the square of class speed, see makeTune
   trickSpin: 0.55,          // seconds for the airborne barrel roll
-  steerPower: 3.3,
+  // Turn rate at full lock, in rad/s, before the speed falloff. Scaled by the
+  // engine class (see SCALED in race.js) so every class holds the same line.
+  // The value is set so that scaled figure lands on what 50cc already had,
+  // which is the handling players found controllable — 100cc and 150cc were
+  // turning 25% and 52% wider than that on identical corners.
+  steerPower: 4.125,
   grassFactor: 0.55,
   driftT1: 0.85,            // seconds of drift for the blue mini-turbo
   driftT2: 1.75,            // … and the orange one
