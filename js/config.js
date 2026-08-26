@@ -126,12 +126,18 @@ export const GP_POINTS = [10, 8, 6, 4, 2, 1];
 // `band` is the rubber-band strength, eased off at 150cc so the AI is not held
 // back in the class meant to be hard.
 //
+// 150cc `speed` came down from 1.22 to 1.15 on play feedback. Every geometric
+// consequence of the class is invariant under this now — turn radius, jump
+// height and distance, reaction time, the distance a drift costs to start and
+// to charge — so this number moves only how fast the world arrives, which was
+// the part that was too much. The gap over 100cc goes from +22% to +15%.
+//
 // `id` is what save keys are stamped with and must never change; `name` is only
 // ever shown to the player.
 export const CLASSES = [
   { id: '50', name: '50cc', speed: 0.80, skill: 1.15, band: 0.13, corner: 1.20 },
   { id: '100', name: '100cc', speed: 1.00, skill: 1.13, band: 0.10, corner: 1.12 },
-  { id: '150', name: '150cc', speed: 1.22, skill: 1.10, band: 0.07, corner: 1.05 },
+  { id: '150', name: '150cc', speed: 1.15, skill: 1.10, band: 0.07, corner: 1.05 },
 ];
 
 export const TRACK_DEFS = [
