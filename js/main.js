@@ -338,7 +338,7 @@ function applyCamera(dt) {
   if (lookBack > 0.02) camAngle += Math.PI * lookBack;
 
   const speedRatio = clamp(Math.abs(p.speed) / G.tune.topSpeed, 0, 1.6);
-  const dist = CFG.camDist + speedRatio * 1.6;
+  const dist = G.tune.camDist + speedRatio * 1.6;
 
   // swing the camera slightly to the outside of a drift
   const wantLat = (p.drift || 0) * -2.0;
@@ -349,7 +349,7 @@ function applyCamera(dt) {
   const cz = p.z - Math.sin(camAngle) * dist + sideZ * camLat;
 
   const camGround = track.query(cx, cz, p.sHint).groundY;
-  const wantY = Math.max(camGround + 2.2, p.groundY + CFG.camHeight);
+  const wantY = Math.max(camGround + 2.2, p.groundY + G.tune.camHeight);
 
   const shake = G.cam.shake;
   const sx = shake > 0.01 ? (Math.random() - 0.5) * shake : 0;
@@ -366,8 +366,8 @@ function applyCamera(dt) {
     camPos.z += (cz - camPos.z) * ck;
   }
   camera.position.set(camPos.x + sx, lerp(camera.position.y || wantY, wantY, Math.min(1, dt * 8)) + sy, camPos.z);
-  const lx = p.x + Math.cos(camAngle) * CFG.camLookAhead;
-  const lz = p.z + Math.sin(camAngle) * CFG.camLookAhead;
+  const lx = p.x + Math.cos(camAngle) * G.tune.camLookAhead;
+  const lz = p.z + Math.sin(camAngle) * G.tune.camLookAhead;
   camera.lookAt(lx, p.groundY + 2.4, lz);
   sun.follow(p.x, p.groundY, p.z);        // keep the shadow box on the action
   if (Math.abs(camLat) > 0.05) camera.rotateZ(camLat * 0.012);   // subtle roll into the drift

@@ -76,8 +76,15 @@ const SHELL_RADIUS = 1.2;
 const SCALED = [
   'topSpeed', 'accel', 'brake', 'revSpeed', 'shellSpeed', 'rampMin',
   'rescueSpeed', 'wrongWayMin', 'grappleRange', 'airLaunch', 'geyserLaunch',
-  'steerPower',
+  'steerPower', 'camDist', 'camHeight', 'camLookAhead',
 ];
+
+// Constants measured in seconds that should instead hold a fixed DISTANCE, so
+// they are divided by k rather than multiplied. A control input the player uses
+// to place the kart has to cost the same piece of track at every class; a
+// consequence like a spin-out stays in real seconds, because that is a
+// wall-clock punishment rather than something you steer with.
+const INV_SCALED = ['hopTime', 'driftT1', 'driftT2'];
 
 // Everything the handling model measures against top speed is already written
 // as a ratio — steering authority, drift entry and exit, slipstream range — so
@@ -117,6 +124,11 @@ function makeTune(cls) {
   t.gravity = CFG.gravity * k * k;
   // ...and the barrel roll has to finish inside that shorter hang time.
   t.trickSpin = CFG.trickSpin / k;
+  for (const key of INV_SCALED) {
+    const base = CFG[key];
+    if (!isFinite(base)) throw new Error('CFG.' + key + ' is missing or not a number');
+    t[key] = base / k;
+  }
 
   const top = t.topSpeed;
   t.driftEntry = top * 0.4;     // fast enough to break into a drift
@@ -507,8 +519,8 @@ export function startRace(sceneRef, track, trackIndex) {
   Sound.music.rush = false;
 
   const p = G.racers[0];
-  G.cam.x = p.x - Math.cos(p.angle) * CFG.camDist;
-  G.cam.z = p.z - Math.sin(p.angle) * CFG.camDist;
+  G.cam.x = p.x - Math.cos(p.angle) * G.tune.camDist;
+  G.cam.z = p.z - Math.sin(p.angle) * G.tune.camDist;
   G.cam.angle = p.angle;
   G.cam.shake = 0;
   updatePlaces();
@@ -988,13 +1000,13 @@ function driveRacer(r, c, dt) {
       (r.slip > 0 ? 0.15 : 1) * (r.onIce ? 0.35 : 1);
 
     if (c.drift && r.drift === 0 && r.speed > T.driftEntry) {
-      if (r.hop <= 0 && !r.driftReady) { r.hop = 0.18; r.driftReady = true; }
+      if (r.hop <= 0 && !r.driftReady) { r.hop = T.hopTime; r.driftReady = true; }
       if (r.hop <= 0 && c.steer !== 0) { r.drift = c.steer > 0 ? 1 : -1; r.driftCharge = 0; }
     }
     if (!c.drift) {
       if (r.drift !== 0) {
-        if (r.driftCharge >= CFG.driftT2) { r.boost = Math.max(r.boost, 1.35); if (r.isPlayer) Sound.boost(); }
-        else if (r.driftCharge >= CFG.driftT1) { r.boost = Math.max(r.boost, 0.85); if (r.isPlayer) Sound.boost(); }
+        if (r.driftCharge >= T.driftT2) { r.boost = Math.max(r.boost, 1.35); if (r.isPlayer) Sound.boost(); }
+        else if (r.driftCharge >= T.driftT1) { r.boost = Math.max(r.boost, 0.85); if (r.isPlayer) Sound.boost(); }
       }
       r.drift = 0; r.driftCharge = 0; r.driftReady = false;
     }
@@ -1005,8 +1017,8 @@ function driveRacer(r, c, dt) {
       const prevCharge = r.driftCharge;
       r.driftCharge += dt * r.mods.drift;
       if (r.isPlayer) {
-        if (prevCharge < CFG.driftT1 && r.driftCharge >= CFG.driftT1) Sound.blip(980, 0.07, 'square', 0.11);
-        if (prevCharge < CFG.driftT2 && r.driftCharge >= CFG.driftT2) Sound.blip(1380, 0.09, 'square', 0.12);
+        if (prevCharge < T.driftT1 && r.driftCharge >= T.driftT1) Sound.blip(980, 0.07, 'square', 0.11);
+        if (prevCharge < T.driftT2 && r.driftCharge >= T.driftT2) Sound.blip(1380, 0.09, 'square', 0.12);
       }
       const inward = c.steer * r.drift;
       const rate = steerPower * (0.52 + 0.42 * (inward + 1) / 2 + 0.25);
@@ -1032,7 +1044,7 @@ function driveRacer(r, c, dt) {
   if (r.star > 0) r.star -= dt;
   if (r.boostPadCd > 0) r.boostPadCd -= dt;
 
-  r.hopZ = r.hop > 0 ? Math.sin((0.18 - r.hop) / 0.18 * Math.PI) * 1.1 : 0;
+  r.hopZ = r.hop > 0 ? Math.sin((T.hopTime - r.hop) / T.hopTime * Math.PI) * 1.1 : 0;
 
   // slipstream: tuck in behind someone at speed for a second, get a surge
   if (r.spin <= 0 && r.stall <= 0 && r.speed > T.draftGate) {
@@ -1643,10 +1655,16 @@ export function stepRace(dt) {
 
   // chase camera (math only; applied to the THREE camera in main)
   const p = G.racers[0];
-  const k = Math.min(1, dt * 6.5);
+  // The follow rate has to scale with the yaw rate it is chasing. A first-order
+  // lag settles at an error of (yaw rate / follow rate), so a fixed 6.5 meant
+  // the camera pointed further off your heading the faster the class — 26
+  // degrees at 150cc against 21 at 100cc, so in a hard corner you were looking
+  // away from the corner you were entering. Scaling it holds that error at one
+  // value for every class.
+  const k = Math.min(1, dt * 6.5 * (G.tune.steerPower / CFG.steerPower));
   G.cam.angle = angNorm(G.cam.angle + angNorm(p.angle - G.cam.angle) * k);
   const speedRatio = clamp(Math.abs(p.speed) / G.tune.topSpeed, 0, 1.6);
-  const dist = CFG.camDist + speedRatio * 1.6;
+  const dist = G.tune.camDist + speedRatio * 1.6;
   const wantX = p.x - Math.cos(G.cam.angle) * dist;
   const wantZ = p.z - Math.sin(G.cam.angle) * dist;
   G.cam.x += (wantX - G.cam.x) * Math.min(1, dt * 12);
@@ -1681,8 +1699,8 @@ export function syncVisuals(dt, time) {
 
     // drift sparks + skid marks
     if (r.drift !== 0 && r.driftCharge > 0.2 && r.q && r.q.onRoad) {
-      const tier = r.driftCharge >= CFG.driftT2 ? [1, 0.55, 0.15] :
-        (r.driftCharge >= CFG.driftT1 ? [0.35, 0.85, 1] : [0.9, 0.9, 0.95]);
+      const tier = r.driftCharge >= T.driftT2 ? [1, 0.55, 0.15] :
+        (r.driftCharge >= T.driftT1 ? [0.35, 0.85, 1] : [0.9, 0.9, 0.95]);
       const side = (-fz), sideZ = fx;
       for (const lat of [1.62, -1.62]) {
         const wx = r.x + fx * -1.6 + side * lat;

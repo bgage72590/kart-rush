@@ -722,10 +722,13 @@ export function updateHUD() {
   const driftOn = p.drift !== 0;
   el.driftbar.classList.toggle('on', driftOn);
   if (driftOn) {
-    const c = clamp(p.driftCharge / CFG.driftT2, 0, 1);
+    // the mini-turbo thresholds are class-scaled, so the bar has to read them
+    // off the tune or it fills against the wrong target
+    const t1 = G.tune.driftT1, t2 = G.tune.driftT2;
+    const c = clamp(p.driftCharge / t2, 0, 1);
     el.driftfill.style.width = (c * 100) + '%';
     el.driftfill.style.background =
-      p.driftCharge >= CFG.driftT2 ? '#ff8a2b' : (p.driftCharge >= CFG.driftT1 ? '#5bd5ff' : '#ffffff');
+      p.driftCharge >= t2 ? '#ff8a2b' : (p.driftCharge >= t1 ? '#5bd5ff' : '#ffffff');
   }
 
   // messages

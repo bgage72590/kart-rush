@@ -31,10 +31,15 @@ export const CFG = {
   // turning 25% and 52% wider than that on identical corners.
   steerPower: 4.125,
   grassFactor: 0.55,
+  hopTime: 0.18,            // the hop before a drift engages
   driftT1: 0.85,            // seconds of drift for the blue mini-turbo
   driftT2: 1.75,            // … and the orange one
   kartRadius: 2.3,
 
+  // The chase rig is a similarity transform scaled by the engine class, so the
+  // framing is identical at every class and the warning it buys you is a
+  // constant number of SECONDS rather than a constant number of units. Left
+  // unscaled, 150cc gave 18% less notice of a corner than 100cc.
   camDist: 13.4,
   camHeight: 6.4,
   camLookAhead: 9.5,
