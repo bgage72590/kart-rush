@@ -1,5 +1,6 @@
 // ---------------------------------------------------------------------------
-// Garage: coin wallet, kart part upgrades, paint. Persisted in localStorage.
+// Garage: coin wallet, kart part upgrades, paint. Persisted through the store,
+// which is the cloud save inside a Playable and localStorage anywhere else.
 // ---------------------------------------------------------------------------
 import { CFG } from './config.js';
 import * as Store from './store.js';

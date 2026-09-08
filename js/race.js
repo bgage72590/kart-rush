@@ -1699,8 +1699,8 @@ export function syncVisuals(dt, time) {
 
     // drift sparks + skid marks
     if (r.drift !== 0 && r.driftCharge > 0.2 && r.q && r.q.onRoad) {
-      const tier = r.driftCharge >= T.driftT2 ? [1, 0.55, 0.15] :
-        (r.driftCharge >= T.driftT1 ? [0.35, 0.85, 1] : [0.9, 0.9, 0.95]);
+      const tier = r.driftCharge >= G.tune.driftT2 ? [1, 0.55, 0.15] :
+        (r.driftCharge >= G.tune.driftT1 ? [0.35, 0.85, 1] : [0.9, 0.9, 0.95]);
       const side = (-fz), sideZ = fx;
       for (const lat of [1.62, -1.62]) {
         const wx = r.x + fx * -1.6 + side * lat;
