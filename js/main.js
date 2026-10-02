@@ -94,6 +94,7 @@ let goTimer = 0;
 let fov = fovBase;
 let prevState = '';
 const stats = { frames: 0, ms: 0, fps: 0, last: performance.now() };
+const FPS_WINDOW_MS = 1000;        // how often the fps figure is resampled
 
 // Adaptive resolution. Sustained slow frames step the render scale down; a
 // sustained comfortable stretch earns it back. Hysteresis on both sides and a
@@ -1017,7 +1018,7 @@ function frame(now) {
   // fps stats
   stats.frames++;
   const el2 = now - stats.last;
-  if (el2 > 1000) {
+  if (el2 > FPS_WINDOW_MS) {
     stats.fps = stats.frames / (el2 / 1000);
     stats.frames = 0;
     stats.last = now;

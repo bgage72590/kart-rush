@@ -237,7 +237,8 @@ export function buildTrackFromDef(def, key) {
     g.fillStyle = T.road;
     g.fillRect(0, 0, 128, 128);
     const rr = mulberry32(def.seed ^ 99);
-    for (let i = 0; i < 900; i++) {
+    const ROAD_SPECKLES = 900;            // grit flecks in the tiled road texture
+    for (let i = 0; i < ROAD_SPECKLES; i++) {
       g.fillStyle = rr() < 0.5 ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.09)';
       g.fillRect(rr() * 128, rr() * 128, 1 + rr() * 2, 1 + rr() * 2);
     }
@@ -1002,7 +1003,8 @@ export function buildTrackFromDef(def, key) {
 
     if (T.stars) {
       const starPos = [];
-      for (let i = 0; i < 450; i++) {
+      const STAR_COUNT = 450;
+      for (let i = 0; i < STAR_COUNT; i++) {
         const a = rng() * TAU, e2 = rng() * Math.PI * 0.48 + 0.05;
         starPos.push(
           Math.cos(a) * Math.cos(e2) * 1500,
@@ -1038,6 +1040,10 @@ export function buildTrackFromDef(def, key) {
     a.curve = Math.abs(angNorm(Math.atan2(b.tz, b.tx) - Math.atan2(a.tz, a.tx)));
   }
 
+  // Past this squared distance (80 units) the best sample in the hinted window
+  // is too far away to trust: the hint is stale, so scan the whole lap.
+  const HINT_LOST_DIST_SQ = 80 * 80;
+
   // nearest-centreline query with a per-caller hint
   function query(x, z, hint) {
     let best = hint | 0, bestD = Infinity;
@@ -1047,7 +1053,7 @@ export function buildTrackFromDef(def, key) {
       const d = dx * dx + dz * dz;
       if (d < bestD) { bestD = d; best = i; }
     }
-    if (bestD > 6400) {
+    if (bestD > HINT_LOST_DIST_SQ) {
       for (let i = 0; i < N; i += 2) {
         const dx = samples[i].x - x, dz = samples[i].z - z;
         const d = dx * dx + dz * dz;

@@ -531,6 +531,9 @@ export function renderGarage(sel) {
     return '<div class="' + cls + '" data-row="3" data-col="' + pi + '"' + style + '></div>';
   }).join('');
   rows.push('<div class="gRow"><span class="gLabel">PAINT</span>' + swatches + '</div>');
+  // Every interpolated value is a PARTS/PAINTS constant or an array index;
+  // stored garage state is only compared here, never inserted.
+  // VC007-OK: no user-controlled input reaches this markup
   $('gRows').innerHTML = rows.join('');
 }
 
@@ -768,6 +771,9 @@ export function renderCupStandings(targetId) {
   const order = gp.points
     .map((pts, id) => ({ pts, id }))
     .sort((a, b) => b.pts - a.pts);
+  // Names and colours are CHARACTERS constants and points are numbers; the cup
+  // lives only in memory and is never loaded from storage.
+  // VC007-OK: no user-controlled input reaches this markup
   box.innerHTML = order.map((e, i) => {
     const charIdx = gp.cast[e.id];
     const col = '#' + CHARACTERS[charIdx].palette.body.toString(16).padStart(6, '0');
@@ -814,6 +820,7 @@ export function showResults() {
   // points are awarded before this renders, so gp.race is already incremented
   if (G.mode === 1 && G.gp) {
     const last = G.gp.race >= 5;
+    // VC007-OK: constant markup plus a race number.
     $('resultsHelp').innerHTML = last
       ? '<b>Enter</b> — podium ceremony'
       : '<b>Enter</b> — next race (' + (G.gp.race + 1) + '/5) · <b>Esc</b> abandon cup';
@@ -832,6 +839,9 @@ export function showResults() {
     row.style.animationDelay = (i * 0.07) + 's';
     const fin = r.finishTime != null ? fmtTime(r.finishTime)
       : (r.projected != null ? '+' + (r.projected - G.time).toFixed(1) + 's' : '—');
+    // Racer names and colours are CHARACTERS constants; place, lap and finish
+    // times are formatted numbers.
+    // VC007-OK: no user-controlled input reaches this markup
     row.innerHTML =
       '<span class="place">' + ordinal(i + 1) + '</span>' +
       '<span class="chip" style="background:#' + CHARACTERS[r.charIdx].palette.body.toString(16).padStart(6, '0') + '"></span>' +

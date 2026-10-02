@@ -5,6 +5,9 @@
 import { CFG } from './config.js';
 import { TAU, clamp } from './util.js';
 
+// Two taps closer together than this (ms) count as a double-tap.
+const DOUBLE_TAP_MS = 340;
+
 function catmull2(p0, p1, p2, p3, t) {
   const t2 = t * t, t3 = t2 * t;
   const f = (a, b, c, d) =>
@@ -60,7 +63,7 @@ export class TrackEditor {
     // add/remove is the only way to reshape a track.
     const now = e.timeStamp;
     const near = Math.hypot(p[0] - this.lastTap.p[0], p[1] - this.lastTap.p[1]) < 0.04;
-    if (now - this.lastTap.t < 340 && near) {
+    if (now - this.lastTap.t < DOUBLE_TAP_MS && near) {
       this.lastTap.t = -1e9;
       this.dragIdx = -1;                          // never drag a point we just removed
       this._dbl(p);
